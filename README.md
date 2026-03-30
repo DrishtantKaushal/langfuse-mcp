@@ -1,17 +1,47 @@
-# langfuse-mcp
+# Langfuse MCP Server
 
-Langfuse MCP server with built-in analytics. Full data access plus token percentiles, accuracy metrics, failure detection, cost breakdowns, session analytics, latency analysis, and context breach scanning.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## Setup
+[Model Context Protocol](https://modelcontextprotocol.io) server for [Langfuse](https://langfuse.com) observability. Query traces, analyze accuracy, detect failures, track costs, debug latency, manage prompts and datasets.
 
-**1. Get your API keys:**
+**34 tools** across data access and analytics. Works with Claude Code, Codex CLI, Cursor, and any MCP-compatible client.
 
-- **Langfuse Cloud:** [cloud.langfuse.com](https://cloud.langfuse.com) → Settings → API Keys
-- **Self-hosted:** Your Langfuse instance → Settings → API Keys. Set `LANGFUSE_HOST` to your instance URL (e.g., `https://langfuse.yourcompany.com`). The default is `https://cloud.langfuse.com`.
+## Why this MCP server?
 
-**2. Add the MCP server** to your client:
+Comparison with [official Langfuse MCP](https://langfuse.com/docs/api-and-data-platform/features/mcp-server) (as of March 2026):
 
-### Claude Code
+| Capability | This server | Official Langfuse MCP |
+|---|:---:|:---:|
+| Traces & Observations | Yes | No |
+| Sessions & Users | Yes | No |
+| Exception Tracking | Yes | No |
+| Prompt Management | Yes | Yes |
+| Dataset Management | Yes | No |
+| Score Write-back | Yes | No |
+| **Accuracy Metrics** | Yes | No |
+| **Failure Detection** | Yes | No |
+| **Token Percentiles** | Yes | No |
+| **Cost Breakdown** | Yes | No |
+| **Latency Analysis** | Yes | No |
+| **Session Analytics** | Yes | No |
+| **Context Breach Scanning** | Yes | No |
+| **User Group Aggregation** | Yes | No |
+
+The official MCP focuses on prompt management. This server provides a **full observability and analytics toolkit** — traces, observations, sessions, scores, exceptions, prompts, datasets, plus 9 built-in analytics tools that compute insights server-side and return LLM-sized summaries.
+
+---
+
+## Quick Start
+
+### 1. Get your API keys
+
+- **Langfuse Cloud:** [cloud.langfuse.com](https://cloud.langfuse.com) &rarr; Settings &rarr; API Keys
+- **Self-hosted:** Your Langfuse instance &rarr; Settings &rarr; API Keys. Set `LANGFUSE_HOST` to your instance URL (e.g., `https://langfuse.yourcompany.com`)
+
+### 2. Add the MCP server
+
+#### Claude Code
 
 ```bash
 claude mcp add \
@@ -22,7 +52,7 @@ claude mcp add \
   langfuse-mcp -- uvx langfuse-mcp
 ```
 
-### Codex CLI
+#### Codex CLI
 
 ```bash
 codex mcp add langfuse-mcp \
@@ -32,7 +62,7 @@ codex mcp add langfuse-mcp \
   -- uvx langfuse-mcp
 ```
 
-### Cursor
+#### Cursor
 
 Add to `.cursor/mcp.json`:
 
@@ -52,7 +82,9 @@ Add to `.cursor/mcp.json`:
 }
 ```
 
-**3. Verify** — restart your CLI, then test with `/mcp` (Claude Code) or `codex mcp list` (Codex).
+### 3. Verify
+
+Restart your CLI, then test with `/mcp` (Claude Code) or `codex mcp list` (Codex).
 
 ### Manual install (alternative to uvx)
 
@@ -61,166 +93,229 @@ pip install langfuse-mcp
 langfuse-mcp serve
 ```
 
+---
+
 ## Configuration
 
 | Env Variable | Default | Description |
 |---|---|---|
-| `LANGFUSE_PUBLIC_KEY` | (required) | Langfuse public API key |
-| `LANGFUSE_SECRET_KEY` | (required) | Langfuse secret API key |
-| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse instance URL |
-| `LANGFUSE_INTERNAL_DOMAINS` | `""` | Comma-separated internal domains to exclude from analytics (e.g., `mycompany.com,test.com`). Only applies when using `group_by='domain'`. |
-| `LANGFUSE_MCP_READ_ONLY` | `false` | Disable write operations (score_traces, create_dataset, etc.) |
+| `LANGFUSE_PUBLIC_KEY` | *(required)* | Langfuse public API key |
+| `LANGFUSE_SECRET_KEY` | *(required)* | Langfuse secret API key |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse instance URL (cloud or self-hosted) |
+| `LANGFUSE_INTERNAL_DOMAINS` | `""` | Comma-separated internal domains to exclude from analytics (e.g., `mycompany.com,test.com`). Applies when using `group_by='domain'`. |
+| `LANGFUSE_MCP_READ_ONLY` | `false` | Disable write operations (`score_traces`, `create_dataset`, etc.) |
 | `LANGFUSE_PAGE_LIMIT` | `100` | Traces per API page |
 
 ---
 
-## All 34 Tools
+## Tools
 
-### Analytics Tools (9)
+### Analytics (9 tools)
 
-| Tool | What it computes |
+Tools that compute insights server-side and return compact summaries. These go beyond raw data access — they aggregate, detect patterns, and compute statistics so the LLM can reason over results without hitting context window limits.
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `aggregate_by_group` | Aggregate trace metrics by user group. Returns per-group: trace count, unique sessions, unique users, accuracy rate, average latency, total cost. | `group_by` (name/userId/domain/tag), `time_range`, `top_n`, `exclude_internal` |
+| `compute_accuracy` | Compute accuracy from feedback scores. Accuracy = correct / (correct + incorrect). Supports grouping and time bucketing for trend analysis. | `group_by`, `bucket_by` (week/day), `score_name`, `time_range` |
+| `detect_failures` | Detect LLM output quality failures using pattern matching ("unable to", "I can't", etc.) and negative feedback scores. NOT Python exceptions — use `find_exceptions` for those. | `group_by`, `include_examples`, `max_examples`, `time_range` |
+| `compute_token_percentiles` | Compute token usage percentiles (TP50/TP90/TP95/TP99) at trace level. Fetches generation observations for accurate per-trace token counts. | `group_by`, `percentiles`, `time_range` |
+| `detect_context_breaches` | Scan for traces where any single generation exceeds a token threshold. Catches context window overflow causing degraded LLM performance or silent truncation. | `threshold` (default 256000), `check_per_generation`, `time_range` |
+| `analyze_sessions` | Analyze multi-turn session behavior. Returns session count, depth distribution (single vs multi-turn), engagement metrics, and session-level cost/latency. | `group_by`, `time_range` |
+| `estimate_costs` | Compute cost breakdown using Langfuse's built-in `totalCost` field (model-aware, computed by Langfuse). Groups by user, agent, or time bucket. | `group_by`, `bucket_by` (week/day), `time_range` |
+| `analyze_latency` | Analyze latency distribution at trace level and optionally per LLM generation. Identifies which model is the bottleneck. | `group_by`, `percentiles`, `include_per_generation`, `time_range` |
+| `score_traces` | Write scores back to Langfuse. Use after analysis to annotate traces with findings — tag failures for review, mark high-quality traces for dataset creation. | `trace_ids`, `score_name`, `score_value`, `comment` |
+
+### Data Access (25 tools)
+
+Full Langfuse API coverage for querying and managing your observability data.
+
+#### Traces
+
+| Tool | Description |
 |---|---|
-| `aggregate_by_group` | Per-group metrics: trace count, sessions, users, accuracy, latency, cost |
-| `compute_accuracy` | Feedback-based accuracy with grouping and time bucketing |
-| `detect_failures` | Pattern-based LLM output failure detection + feedback cross-reference |
-| `compute_token_percentiles` | TP50/TP90/TP95/TP99 token usage at trace level |
-| `detect_context_breaches` | Per-generation context window threshold scanning |
-| `analyze_sessions` | Multi-turn depth, engagement, session-level cost/latency |
-| `estimate_costs` | Cost breakdown by group or time bucket |
-| `analyze_latency` | Latency percentiles at trace and per-generation/model level |
-| `score_traces` | Write scores back to Langfuse (annotate traces after analysis) |
+| `fetch_traces` | List traces with filters — user ID, name, tags, time range, ordering. Returns paginated results. |
+| `fetch_trace` | Get a single trace by ID with full details including all observations (spans, generations, events). |
 
-### Data Access Tools (25)
+#### Observations
 
-| Category | Tools |
+| Tool | Description |
 |---|---|
-| **Traces** | `fetch_traces`, `fetch_trace` |
-| **Observations** | `fetch_observations`, `fetch_observation` |
-| **Sessions** | `fetch_sessions`, `get_session_details`, `get_user_sessions` |
-| **Errors** | `find_exceptions`, `get_exception_details`, `get_error_count` |
-| **Scores** | `fetch_scores` |
-| **Prompts** | `list_prompts`, `get_prompt`, `create_text_prompt`, `create_chat_prompt`, `update_prompt_labels` |
-| **Datasets** | `list_datasets`, `get_dataset`, `list_dataset_items`, `get_dataset_item`, `create_dataset`, `create_dataset_item`, `delete_dataset_item` |
-| **Schema** | `get_data_schema` |
+| `fetch_observations` | List observations with filters — trace ID, type (GENERATION/SPAN/EVENT), name, time range. |
+| `fetch_observation` | Get a single observation by ID. Returns input/output, token usage, model, latency, and cost. |
+
+#### Sessions
+
+| Tool | Description |
+|---|---|
+| `fetch_sessions` | List sessions with optional time filters. |
+| `get_session_details` | Get full details of a session including all its traces. |
+| `get_user_sessions` | Get sessions for a specific user. Fetches user's traces and extracts unique sessions. |
+
+#### Errors
+
+| Tool | Description |
+|---|---|
+| `find_exceptions` | Find observations with error status. For LLM output quality issues, use `detect_failures` instead. |
+| `get_exception_details` | Get full error details for a trace — returns all observations with error status highlighted. |
+| `get_error_count` | Get total error count within a time period. |
+
+#### Scores
+
+| Tool | Description |
+|---|---|
+| `fetch_scores` | List scores/evaluations with filters — trace ID, score name, time range. |
+
+#### Prompts
+
+| Tool | Description |
+|---|---|
+| `list_prompts` | List all prompts in the project with optional name filter. |
+| `get_prompt` | Fetch a specific prompt by name, version, or label. |
+| `create_text_prompt` | Create a new text prompt version with optional labels and model config. |
+| `create_chat_prompt` | Create a new chat prompt version with message array and optional config. |
+| `update_prompt_labels` | Update labels for a specific prompt version (e.g., promote to "production"). |
+
+#### Datasets
+
+| Tool | Description |
+|---|---|
+| `list_datasets` | List all datasets in the project. |
+| `get_dataset` | Get metadata for a specific dataset. |
+| `list_dataset_items` | List items in a dataset with pagination. |
+| `get_dataset_item` | Get a single dataset item by ID. |
+| `create_dataset` | Create a new dataset with optional description and metadata. |
+| `create_dataset_item` | Create or upsert a dataset item. Supports linking to source traces. |
+| `delete_dataset_item` | Delete a dataset item by ID. |
+
+#### Schema
+
+| Tool | Description |
+|---|---|
+| `get_data_schema` | Get the data schema for the Langfuse project — available fields and types for traces, observations, scores, sessions. |
 
 ---
 
 ## Sample Questions
 
-### Agent & Pipeline Health
+Once connected, ask your AI assistant questions like these:
 
-```
-"Which agents failed the most this week?"
-"What's the failure rate by agent name?"
-"Which agent has the worst accuracy?"
-"Show me the top 5 agents by trace volume"
-"Are any agents consistently slower than others?"
-```
+### Agent & Pipeline Health
+- "Which agents failed the most this week?"
+- "What's the failure rate by agent name?"
+- "Which agent has the worst accuracy?"
+- "Show me the top 5 agents by trace volume"
+- "Are any agents consistently slower than others?"
+- "Compare all agents by accuracy, latency, and cost"
 
 ### Accuracy & Quality
-
-```
-"What's our overall accuracy this week?"
-"What's the accuracy trend by week for the last 30 days?"
-"Compare accuracy across different agents"
-"What's the daily accuracy breakdown?"
-"Which users are getting the worst accuracy?"
-"What percentage of traces have feedback scores?"
-```
+- "What's our overall accuracy this week?"
+- "What's the accuracy trend by week for the last 30 days?"
+- "Compare accuracy across different agents"
+- "What's the daily accuracy breakdown?"
+- "Which users are getting the worst accuracy?"
+- "What percentage of traces have feedback scores?"
 
 ### Failures & Debugging
-
-```
-"Show me failure examples from today"
-"What are the most common failure patterns?"
-"Which users are seeing the most failures?"
-"What's the failure rate by agent?"
-"Are failures increasing or decreasing this week vs last?"
-"Show me traces where the LLM said 'unable to' or 'I can't'"
-```
+- "Show me failure examples from today"
+- "What are the most common failure patterns?"
+- "Which users are seeing the most failures?"
+- "What's the failure rate by agent?"
+- "Are failures increasing or decreasing this week vs last?"
+- "Show me traces where the LLM said 'unable to' or 'I can't'"
 
 ### Token Usage
-
-```
-"What are the P90 and P99 token usage stats?"
-"Which agents consume the most tokens?"
-"Compare token usage across user groups"
-"Are any users hitting unusually high token counts?"
-```
+- "What are the P90 and P99 token usage stats?"
+- "Which agents consume the most tokens?"
+- "Compare token usage across user groups"
+- "Are any users hitting unusually high token counts?"
 
 ### Context Window Breaches
-
-```
-"Are any generations exceeding the 128K context window?"
-"Show me traces with token usage above 200K per generation"
-"What's the breach severity distribution?"
-"Which users trigger the most context window breaches?"
-```
+- "Are any generations exceeding the 128K context window?"
+- "Show me traces with token usage above 200K per generation"
+- "What's the breach severity distribution?"
+- "Which users trigger the most context window breaches?"
 
 ### Sessions & Engagement
-
-```
-"What's our multi-turn rate?"
-"How deep are sessions on average?"
-"Which users have the deepest sessions?"
-"How many single-turn vs multi-turn sessions this week?"
-"What's the average session cost?"
-```
+- "What's our multi-turn rate?"
+- "How deep are sessions on average?"
+- "Which users have the deepest sessions?"
+- "How many single-turn vs multi-turn sessions this week?"
+- "What's the average session cost?"
 
 ### Cost
-
-```
-"How much are we spending per day this week?"
-"What's the weekly cost trend for the last 30 days?"
-"Which agent is the most expensive?"
-"Which users are costing the most?"
-"What's the average cost per trace?"
-```
+- "How much are we spending per day this week?"
+- "What's the weekly cost trend for the last 30 days?"
+- "Which agent is the most expensive?"
+- "Which users are costing the most?"
+- "What's the average cost per trace?"
 
 ### Latency
-
-```
-"What's the P95 latency?"
-"Is latency getting worse over time?"
-"Which model is the slowest?"
-"Compare latency across agents"
-"Show me per-generation latency breakdown by model"
-"Which users are experiencing the highest latency?"
-```
+- "What's the P95 latency?"
+- "Is latency getting worse over time?"
+- "Which model is the slowest?"
+- "Compare latency across agents"
+- "Show me per-generation latency breakdown by model"
+- "Which users are experiencing the highest latency?"
 
 ### Annotation & Write-back
-
-```
-"Score all failing traces from today with 'needs-review'"
-"Tag these trace IDs as 'high-quality' for dataset creation"
-"Mark trace abc-123 with a score of 0 and comment 'hallucinated output'"
-```
+- "Score all failing traces from today with 'needs-review'"
+- "Tag these trace IDs as 'high-quality' for dataset creation"
+- "Mark trace abc-123 with a score of 0 and comment 'hallucinated output'"
 
 ### Lookups & Exploration
-
-```
-"Fetch the last 20 traces"
-"Show me trace abc-123 with all its observations"
-"List sessions for user alice@example.com"
-"What errors happened in the last 24 hours?"
-"How many errors occurred this week?"
-"Show me all prompts in the project"
-"List all datasets"
-"What fields are available on traces and observations?"
-```
+- "Fetch the last 20 traces"
+- "Show me trace abc-123 with all its observations"
+- "List sessions for user alice@example.com"
+- "What errors happened in the last 24 hours?"
+- "How many errors occurred this week?"
+- "Show me all prompts in the project"
+- "List all datasets"
+- "What fields are available on traces and observations?"
 
 ---
 
-### Grouping Options
+## Grouping Options
 
 The `group_by` parameter controls how traces are segmented in analytics tools:
 
 | Value | What it groups by | When to use |
 |---|---|---|
-| `name` | Trace/agent name (default) | Compare performance across different agents or pipelines |
+| `name` | Trace/agent name *(default)* | Compare performance across different agents or pipelines |
 | `userId` | Per-user breakdown | Identify users with issues or high usage |
-| `domain` | Email domain extracted from userId | Multi-tenant apps where users have email-based IDs (e.g., `user@acme.com` → `acme.com`) |
+| `domain` | Email domain extracted from userId | Multi-tenant apps where users have email-based IDs (e.g., `user@acme.com` &rarr; `acme.com`) |
 | `tag` | Trace tags | Compare across tagged environments, versions, or experiments |
+
+---
+
+## Read-Only Mode
+
+To disable write operations (`score_traces`, `create_dataset`, `create_dataset_item`, `delete_dataset_item`, `create_text_prompt`, `create_chat_prompt`):
+
+```bash
+# Add to your env vars:
+LANGFUSE_MCP_READ_ONLY=true
+```
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/DrishtantKaushal/langfuse-mcp.git
+cd langfuse-mcp
+uv venv .venv && source .venv/bin/activate
+uv pip install -e "."
+```
+
+Run locally:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-... \
+LANGFUSE_SECRET_KEY=sk-lf-... \
+LANGFUSE_HOST=https://cloud.langfuse.com \
+python -m langfuse_analyst
+```
 
 ---
 
