@@ -16,7 +16,7 @@ config = Config.from_env()
 client = LangfuseClient(config)
 
 mcp = FastMCP(
-    "langfuse-analyst",
+    "langfuse-mcp",
     instructions="""Langfuse analytics MCP server.
 
 Available capabilities:

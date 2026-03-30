@@ -1,4 +1,4 @@
-# langfuse-analyst
+# langfuse-mcp
 
 Langfuse MCP server with built-in analytics. Full data access plus token percentiles, accuracy metrics, failure detection, cost breakdowns, session analytics, latency analysis, and context breach scanning.
 
@@ -19,17 +19,17 @@ claude mcp add \
   -e LANGFUSE_SECRET_KEY=sk-lf-... \
   -e LANGFUSE_HOST=https://cloud.langfuse.com \
   --scope project \
-  langfuse-analyst -- uvx langfuse-analyst
+  langfuse-mcp -- uvx langfuse-mcp
 ```
 
 ### Codex CLI
 
 ```bash
-codex mcp add langfuse-analyst \
+codex mcp add langfuse-mcp \
   --env LANGFUSE_PUBLIC_KEY=pk-lf-... \
   --env LANGFUSE_SECRET_KEY=sk-lf-... \
   --env LANGFUSE_HOST=https://cloud.langfuse.com \
-  -- uvx langfuse-analyst
+  -- uvx langfuse-mcp
 ```
 
 ### Cursor
@@ -39,9 +39,9 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "langfuse-analyst": {
+    "langfuse-mcp": {
       "command": "uvx",
-      "args": ["langfuse-analyst"],
+      "args": ["langfuse-mcp"],
       "env": {
         "LANGFUSE_PUBLIC_KEY": "pk-lf-...",
         "LANGFUSE_SECRET_KEY": "sk-lf-...",
@@ -57,8 +57,8 @@ Add to `.cursor/mcp.json`:
 ### Manual install (alternative to uvx)
 
 ```bash
-pip install langfuse-analyst
-langfuse-analyst serve
+pip install langfuse-mcp
+langfuse-mcp serve
 ```
 
 ## Configuration

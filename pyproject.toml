@@ -1,5 +1,5 @@
 [project]
-name = "langfuse-analyst"
+name = "langfuse-mcp"
 version = "0.1.0"
 description = "Everything the community Langfuse MCP does, plus analytics. Drop-in replacement with token percentiles, accuracy metrics, failure detection, cost breakdowns, session analytics, latency analysis, and context breach scanning."
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-langfuse-analyst = "langfuse_analyst.server:main"
+langfuse-mcp = "langfuse_analyst.server:main"
 
 [build-system]
 requires = ["hatchling"]
