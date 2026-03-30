@@ -393,79 +393,18 @@ Other implementations provide data access (fetching raw traces, observations, se
 
 ---
 
-## Development
-
-```bash
-git clone https://github.com/DrishtantKaushal/langfuse-mcp.git
-cd langfuse-mcp
-uv venv .venv && source .venv/bin/activate
-uv pip install -e "."
-```
-
-Run locally:
-
-```bash
-LANGFUSE_PUBLIC_KEY=pk-lf-... \
-LANGFUSE_SECRET_KEY=sk-lf-... \
-LANGFUSE_HOST=https://cloud.langfuse.com \
-python -m langfuse_mcp
-```
-
-Test tool registration:
-
-```bash
-LANGFUSE_PUBLIC_KEY=test LANGFUSE_SECRET_KEY=test python -c "
-import asyncio
-from langfuse_mcp.server import mcp
-async def main():
-    tools = await mcp.list_tools()
-    print(f'{len(tools)} tools registered')
-    for t in sorted(tools, key=lambda x: x.name):
-        print(f'  {t.name}')
-asyncio.run(main())
-"
-```
-
----
-
 ## Contributing
 
-Contributions are welcome. Here's how to get started:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style guidelines, and areas for contribution.
 
-1. **Fork** the repository
-2. **Create a branch** for your feature (`git checkout -b feature/my-feature`)
-3. **Make your changes** — follow the existing code style
-4. **Test** — verify your changes work with `python -m langfuse_mcp`
-5. **Submit a PR** with a clear description of what you changed and why
+## Security
 
-### Areas for contribution
-
-- Additional analytics tools (e.g., model comparison, prompt version tracking, retry detection)
-- Trace visualization (Mermaid waterfall, ASCII span tree)
-- Performance improvements (caching, connection pooling)
-- Documentation and examples
-- Bug fixes and edge case handling
-
-### Guidelines
-
-- Keep tools outcome-oriented — return computed insights, not raw API dumps
-- Analytics tools should accept `time_range`, `group_by`, and `tags` parameters consistently
-- Tool descriptions are prompt engineering — they land directly in the LLM's context. Be precise about *when* to use each tool.
-- Return compact JSON summaries sized for LLM context windows
-- Don't add dependencies unless absolutely necessary
-
----
+See [SECURITY.md](SECURITY.md) for the security policy, vulnerability reporting, and API key handling.
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
-
-**In short:** Be respectful, constructive, and inclusive. Harassment, trolling, and personal attacks are not tolerated. We're here to build good tools together.
-
-To report issues, contact the maintainer via [GitHub Issues](https://github.com/DrishtantKaushal/langfuse-mcp/issues).
-
----
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
