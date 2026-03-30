@@ -408,7 +408,7 @@ Run locally:
 LANGFUSE_PUBLIC_KEY=pk-lf-... \
 LANGFUSE_SECRET_KEY=sk-lf-... \
 LANGFUSE_HOST=https://cloud.langfuse.com \
-python -m langfuse_analyst
+python -m langfuse_mcp
 ```
 
 Test tool registration:
@@ -416,7 +416,7 @@ Test tool registration:
 ```bash
 LANGFUSE_PUBLIC_KEY=test LANGFUSE_SECRET_KEY=test python -c "
 import asyncio
-from langfuse_analyst.server import mcp
+from langfuse_mcp.server import mcp
 async def main():
     tools = await mcp.list_tools()
     print(f'{len(tools)} tools registered')
@@ -435,7 +435,7 @@ Contributions are welcome. Here's how to get started:
 1. **Fork** the repository
 2. **Create a branch** for your feature (`git checkout -b feature/my-feature`)
 3. **Make your changes** — follow the existing code style
-4. **Test** — verify your changes work with `python -m langfuse_analyst`
+4. **Test** — verify your changes work with `python -m langfuse_mcp`
 5. **Submit a PR** with a clear description of what you changed and why
 
 ### Areas for contribution
