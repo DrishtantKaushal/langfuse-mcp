@@ -1,4 +1,4 @@
-"""langfuse-analyst MCP server."""
+"""langfuse-mcp server."""
 from __future__ import annotations
 import os
 
@@ -36,8 +36,19 @@ Set LANGFUSE_INTERNAL_DOMAINS env var to filter internal users.
 """,
 )
 
-register_data_access_tools(mcp, client)
-register_analytics_tools(mcp, client)
+# Selective tool loading: LANGFUSE_TOOLS=traces,analytics or --tools traces,prompts
+# Available groups: traces, observations, sessions, errors, scores, prompts, datasets, schema, analytics
+_enabled_tools = os.getenv("LANGFUSE_TOOLS", "").strip()
+_enabled_groups = {g.strip().lower() for g in _enabled_tools.split(",") if g.strip()} if _enabled_tools else None
+
+# If no filter specified, register everything
+if _enabled_groups is None:
+    register_data_access_tools(mcp, client)
+    register_analytics_tools(mcp, client)
+else:
+    register_data_access_tools(mcp, client, enabled_groups=_enabled_groups)
+    if "analytics" in _enabled_groups:
+        register_analytics_tools(mcp, client)
 
 
 def main():

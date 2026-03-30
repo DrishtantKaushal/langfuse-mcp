@@ -288,14 +288,108 @@ The `group_by` parameter controls how traces are segmented in analytics tools:
 
 ---
 
-## Read-Only Mode
+## Selective Tool Loading
 
-To disable write operations (`score_traces`, `create_dataset`, `create_dataset_item`, `delete_dataset_item`, `create_text_prompt`, `create_chat_prompt`):
+Load only the tool groups you need to reduce token overhead:
 
 ```bash
-# Add to your env vars:
+# Only load traces and analytics tools
+LANGFUSE_TOOLS=traces,analytics langfuse-mcp serve
+
+# Only load prompts and datasets
+LANGFUSE_TOOLS=prompts,datasets langfuse-mcp serve
+
+# In Claude Code
+claude mcp add \
+  -e LANGFUSE_PUBLIC_KEY=pk-lf-... \
+  -e LANGFUSE_SECRET_KEY=sk-lf-... \
+  -e LANGFUSE_TOOLS=traces,observations,analytics \
+  langfuse-mcp -- uvx langfuse-mcp
+```
+
+Available groups:
+
+| Group | Tools | Count |
+|---|---|---|
+| `traces` | `fetch_traces`, `fetch_trace` | 2 |
+| `observations` | `fetch_observations`, `fetch_observation` | 2 |
+| `sessions` | `fetch_sessions`, `get_session_details`, `get_user_sessions` | 3 |
+| `errors` | `find_exceptions`, `get_exception_details`, `get_error_count` | 3 |
+| `scores` | `fetch_scores` | 1 |
+| `prompts` | `list_prompts`, `get_prompt`, `create_text_prompt`, `create_chat_prompt`, `update_prompt_labels` | 5 |
+| `datasets` | `list_datasets`, `get_dataset`, `list_dataset_items`, `get_dataset_item`, `create_dataset`, `create_dataset_item`, `delete_dataset_item` | 7 |
+| `schema` | `get_data_schema` | 1 |
+| `analytics` | All 9 analytics tools | 9 |
+
+If `LANGFUSE_TOOLS` is not set, all 34 tools are loaded.
+
+---
+
+## Read-Only Mode
+
+Disable write operations (`score_traces`, `create_dataset`, `create_dataset_item`, `delete_dataset_item`, `create_text_prompt`, `create_chat_prompt`):
+
+```bash
 LANGFUSE_MCP_READ_ONLY=true
 ```
+
+---
+
+## How it Compares
+
+### vs Official Langfuse MCP
+
+| Capability | This server | Official Langfuse MCP |
+|---|:---:|:---:|
+| Traces & Observations | Yes | No |
+| Sessions & Users | Yes | No |
+| Exception Tracking | Yes | No |
+| Prompt Management | Yes | Yes |
+| Dataset Management | Yes | No |
+| Score Write-back | Yes | No |
+| Selective Tool Loading | Yes | No |
+| Accuracy Metrics | Yes | No |
+| Failure Detection | Yes | No |
+| Token Percentiles | Yes | No |
+| Cost Breakdown | Yes | No |
+| Latency Analysis | Yes | No |
+| Session Analytics | Yes | No |
+| Context Breach Scanning | Yes | No |
+| User Group Aggregation | Yes | No |
+
+The official Langfuse MCP (5 tools) focuses on prompt management. This server provides full observability coverage plus 9 analytics tools.
+
+### vs Other Langfuse MCP Implementations
+
+| Capability | This server | Others |
+|---|:---:|:---:|
+| Data access (traces, observations, sessions) | Yes | Yes |
+| Prompt & dataset management | Yes | Yes |
+| Exception tracking | Yes | Yes |
+| Selective tool loading | Yes | Yes |
+| **Accuracy metrics** | **Yes** | No |
+| **LLM failure detection** | **Yes** | No |
+| **Token percentiles (TP50/P90/P95/P99)** | **Yes** | No |
+| **Cost breakdown by group/time** | **Yes** | No |
+| **Latency analysis with per-model breakdown** | **Yes** | No |
+| **Multi-turn session analytics** | **Yes** | No |
+| **Context window breach scanning** | **Yes** | No |
+| **User/tenant group aggregation** | **Yes** | No |
+| **Score write-back** | **Yes** | No |
+
+Other implementations provide data access (fetching raw traces, observations, sessions). This server adds a **compute layer** — analytics tools that aggregate, detect patterns, and compute statistics server-side, returning compact summaries instead of raw API dumps.
+
+### vs Platform-Embedded AI (Braintrust Loop, LangSmith Insights, Arize Alyx)
+
+| Capability | This server | Platform AI assistants |
+|---|:---:|:---:|
+| Open source | Yes | No |
+| Works with any MCP client | Yes | Platform-locked |
+| Self-hosted Langfuse support | Yes | N/A |
+| Real-time conversational | Yes | Varies (some batch-only) |
+| Custom grouping/segmentation | Yes | Limited |
+| Write-back to Langfuse | Yes | Platform-specific |
+| Free | Yes | Paid tiers |
 
 ---
 
@@ -316,6 +410,59 @@ LANGFUSE_SECRET_KEY=sk-lf-... \
 LANGFUSE_HOST=https://cloud.langfuse.com \
 python -m langfuse_analyst
 ```
+
+Test tool registration:
+
+```bash
+LANGFUSE_PUBLIC_KEY=test LANGFUSE_SECRET_KEY=test python -c "
+import asyncio
+from langfuse_analyst.server import mcp
+async def main():
+    tools = await mcp.list_tools()
+    print(f'{len(tools)} tools registered')
+    for t in sorted(tools, key=lambda x: x.name):
+        print(f'  {t.name}')
+asyncio.run(main())
+"
+```
+
+---
+
+## Contributing
+
+Contributions are welcome. Here's how to get started:
+
+1. **Fork** the repository
+2. **Create a branch** for your feature (`git checkout -b feature/my-feature`)
+3. **Make your changes** — follow the existing code style
+4. **Test** — verify your changes work with `python -m langfuse_analyst`
+5. **Submit a PR** with a clear description of what you changed and why
+
+### Areas for contribution
+
+- Additional analytics tools (e.g., model comparison, prompt version tracking, retry detection)
+- Trace visualization (Mermaid waterfall, ASCII span tree)
+- Performance improvements (caching, connection pooling)
+- Documentation and examples
+- Bug fixes and edge case handling
+
+### Guidelines
+
+- Keep tools outcome-oriented — return computed insights, not raw API dumps
+- Analytics tools should accept `time_range`, `group_by`, and `tags` parameters consistently
+- Tool descriptions are prompt engineering — they land directly in the LLM's context. Be precise about *when* to use each tool.
+- Return compact JSON summaries sized for LLM context windows
+- Don't add dependencies unless absolutely necessary
+
+---
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+
+**In short:** Be respectful, constructive, and inclusive. Harassment, trolling, and personal attacks are not tolerated. We're here to build good tools together.
+
+To report issues, contact the maintainer via [GitHub Issues](https://github.com/DrishtantKaushal/langfuse-mcp/issues).
 
 ---
 
