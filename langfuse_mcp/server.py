@@ -23,13 +23,20 @@ Available capabilities:
 - DATA ACCESS: Fetch traces, observations, sessions, scores, prompts, datasets
 - ANALYTICS: Aggregate by group, compute accuracy, detect failures, token percentiles,
   context breach scanning, session analysis, cost breakdown, latency analysis
+- CONTENT TOOLS: List user queries, find slow traces, search trace content by keyword
 - WRITE-BACK: Score and annotate traces
 
-For lookups, use data access tools (fetch_traces, fetch_trace, etc.).
-For analytical questions, use analytics tools.
+IMPORTANT routing rules:
+- "What queries/questions did users ask?" → list_user_queries (NOT fetch_traces)
+- "Which traces were slowest?" → find_slow_traces (NOT fetch_traces)
+- "Find traces about X / mentioning X" → search_trace_content (NOT fetch_traces)
+- For aggregate stats (accuracy, costs, latency percentiles) → use analytics tools
+- fetch_traces returns COMPACT metadata only (no input/output). Use fetch_trace(id) for full details.
 
-Time range presets: today, yesterday, last_7_days, last_15_days, last_30_days,
+Default time range is 'today' unless the user specifies otherwise.
+Available presets: today, yesterday, last_7_days, last_15_days, last_30_days,
 last_90_days, or custom with start_date/end_date.
+Configurable via LANGFUSE_DEFAULT_TIME_RANGE env var.
 
 Use group_by='domain' to segment by user email domain.
 Set LANGFUSE_INTERNAL_DOMAINS env var to filter internal users.

@@ -55,9 +55,15 @@ def _extract_input_text(trace: dict) -> str:
     return ""
 
 
+def _resolve_time_range(client, time_range):
+    """Resolve time_range: use config default if not explicitly set."""
+    return time_range if time_range else client.config.default_time_range
+
+
 async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags, user_id,
                              max_pages=10):
     """Fetch traces for a time range. Default 10 pages (1000 traces) for fast analytics."""
+    time_range = _resolve_time_range(client, time_range)
     start, end = client.resolve_time_range(time_range, start_date, end_date)
     params = {
         "fromTimestamp": start.isoformat(),
@@ -74,6 +80,7 @@ async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags
 async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tags,
                                     max_trace_pages=10, max_score_pages=10):
     """Fetch traces and scores in parallel. Returns (traces, score_map)."""
+    time_range = _resolve_time_range(client, time_range)
     start, end = client.resolve_time_range(time_range, start_date, end_date)
     ts_params = {
         "fromTimestamp": start.isoformat(),
@@ -98,7 +105,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def aggregate_by_group(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         group_by: str = "name",
@@ -195,7 +202,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def compute_accuracy(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         group_by: str | None = None,
@@ -265,7 +272,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def detect_failures(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -346,7 +353,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def compute_token_percentiles(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -377,7 +384,7 @@ def register_analytics_tools(mcp, client):
             grouped[key].append(t)
 
         # Fetch observations: try batch first, fall back to concurrent per-trace
-        start, end = client.resolve_time_range(time_range, start_date, end_date)
+        start, end = client.resolve_time_range(_resolve_time_range(client, time_range), start_date, end_date)
         obs_by_trace = await client.fetch_observations_by_time_range(
             from_timestamp=start.isoformat(),
             to_timestamp=end.isoformat(),
@@ -432,7 +439,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def detect_context_breaches(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -448,7 +455,7 @@ def register_analytics_tools(mcp, client):
         traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None, max_pages=20)
 
         # Fetch observations: batch first, concurrent per-trace fallback
-        start, end = client.resolve_time_range(time_range, start_date, end_date)
+        start, end = client.resolve_time_range(_resolve_time_range(client, time_range), start_date, end_date)
         obs_by_trace = await client.fetch_observations_by_time_range(
             from_timestamp=start.isoformat(),
             to_timestamp=end.isoformat(),
@@ -517,7 +524,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def analyze_sessions(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -595,7 +602,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def estimate_costs(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -657,7 +664,7 @@ def register_analytics_tools(mcp, client):
 
     @mcp.tool()
     async def analyze_latency(
-        time_range: str = "last_7_days",
+        time_range: str = "",
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
@@ -752,6 +759,212 @@ def register_analytics_tools(mcp, client):
             "per_generation_by_model": gen_results,
             "traces_analyzed": len(traces),
             "traces_with_latency": len(all_lats),
+        }
+
+    @mcp.tool()
+    async def list_user_queries(
+        time_range: str = "",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        tags: str | None = None,
+        user_id: str | None = None,
+        name: str | None = None,
+        group_by: str | None = None,
+        exclude_internal: bool = False,
+        limit: int = 100,
+    ) -> dict:
+        """List user queries extracted from trace inputs.
+
+        Use this to answer: 'What are merchants asking?', 'What queries came in today?',
+        'What did users ask about?'. Returns extracted query text with metadata.
+
+        group_by: 'name' (agent), 'userId', 'domain'. Set exclude_internal=true to
+        filter internal team users.
+        """
+        traces = await _fetch_traces_for_range(
+            client, time_range, start_date, end_date, tags, user_id,
+        )
+
+        # Apply name filter if provided
+        if name:
+            traces = [t for t in traces if t.get("name") == name]
+
+        queries = []
+        group_counts: dict[str, int] = defaultdict(int)
+
+        for t in traces:
+            if exclude_internal:
+                domain = client.extract_domain(t.get("userId"))
+                if client.is_internal(domain):
+                    continue
+
+            query_text = _extract_input_text(t)
+            if not query_text:
+                continue
+
+            gkey = None
+            if group_by == "domain":
+                gkey = client.extract_domain(t.get("userId")) or "unknown"
+            elif group_by == "name":
+                gkey = t.get("name") or "unknown"
+            elif group_by == "userId":
+                gkey = t.get("userId") or "unknown"
+            if gkey:
+                group_counts[gkey] += 1
+
+            queries.append({
+                "trace_id": t.get("id"),
+                "timestamp": t.get("timestamp"),
+                "user_id": t.get("userId"),
+                "agent": t.get("name"),
+                "session_id": t.get("sessionId"),
+                "query": query_text[:500],
+            })
+
+        queries.sort(key=lambda q: q["timestamp"] or "", reverse=True)
+        queries = queries[:limit]
+
+        result: dict = {
+            "total_traces": len(traces),
+            "queries_extracted": len(queries),
+            "queries": queries,
+        }
+        if group_by:
+            sorted_groups = sorted(group_counts.items(), key=lambda x: x[1], reverse=True)
+            result["group_counts"] = [{"group": k, "count": v} for k, v in sorted_groups[:20]]
+        return result
+
+    @mcp.tool()
+    async def find_slow_traces(
+        time_range: str = "",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        tags: str | None = None,
+        threshold_seconds: float | None = None,
+        top_n: int = 20,
+        group_by: str | None = None,
+    ) -> dict:
+        """Find the slowest traces. Returns actual trace IDs and metadata.
+
+        Use this to answer: 'Which traces were slowest?', 'Show me traces taking >30s',
+        'What's causing high latency today?'.
+
+        If threshold_seconds is set, returns all traces above that threshold.
+        Otherwise returns the top_n slowest traces.
+        group_by: 'name' (agent), 'userId', 'domain'.
+        """
+        traces = await _fetch_traces_for_range(
+            client, time_range, start_date, end_date, tags, None,
+        )
+
+        with_latency = []
+        for t in traces:
+            lat = t.get("latency")
+            if lat is not None:
+                with_latency.append((float(lat), t))
+
+        with_latency.sort(key=lambda x: x[0], reverse=True)
+
+        if threshold_seconds is not None:
+            slow = [(lat, t) for lat, t in with_latency if lat >= threshold_seconds]
+        else:
+            slow = with_latency[:top_n]
+
+        group_stats: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_lat": 0.0})
+
+        results = []
+        for lat, t in slow:
+            query_preview = _extract_input_text(t)[:200]
+            results.append({
+                "trace_id": t.get("id"),
+                "timestamp": t.get("timestamp"),
+                "user_id": t.get("userId"),
+                "agent": t.get("name"),
+                "latency_s": round(lat, 2),
+                "cost_usd": round(float(t.get("totalCost") or 0), 4),
+                "query_preview": query_preview,
+            })
+
+            gkey = None
+            if group_by == "domain":
+                gkey = client.extract_domain(t.get("userId")) or "unknown"
+            elif group_by == "name":
+                gkey = t.get("name") or "unknown"
+            elif group_by == "userId":
+                gkey = t.get("userId") or "unknown"
+            if gkey:
+                gs = group_stats[gkey]
+                gs["count"] += 1
+                gs["total_lat"] += lat
+
+        result: dict = {
+            "total_traces": len(traces),
+            "traces_with_latency": len(with_latency),
+            "slow_traces_found": len(results),
+            "threshold_seconds": threshold_seconds,
+            "traces": results,
+        }
+        if group_by:
+            sorted_groups = sorted(group_stats.items(), key=lambda x: x[1]["count"], reverse=True)
+            result["group_breakdown"] = [
+                {"group": k, "count": v["count"], "avg_latency_s": round(v["total_lat"] / v["count"], 2)}
+                for k, v in sorted_groups
+            ]
+        return result
+
+    @mcp.tool()
+    async def search_trace_content(
+        query: str,
+        time_range: str = "",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        tags: str | None = None,
+        search_in: str = "both",
+        limit: int = 50,
+    ) -> dict:
+        """Search trace inputs and outputs for keywords.
+
+        Use this to answer: 'Find traces mentioning refund', 'Which queries asked about
+        payment failures?', 'Show traces related to order ID X'.
+
+        search_in: 'input', 'output', or 'both' (default).
+        query: keyword or phrase to search for (case-insensitive).
+        """
+        traces = await _fetch_traces_for_range(
+            client, time_range, start_date, end_date, tags, None,
+        )
+
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        matches = []
+
+        for t in traces:
+            input_text = _extract_input_text(t) if search_in in ("input", "both") else ""
+            output_text = _extract_output_text(t) if search_in in ("output", "both") else ""
+
+            input_match = bool(pattern.search(input_text)) if input_text else False
+            output_match = bool(pattern.search(output_text)) if output_text else False
+
+            if input_match or output_match:
+                matches.append({
+                    "trace_id": t.get("id"),
+                    "timestamp": t.get("timestamp"),
+                    "user_id": t.get("userId"),
+                    "agent": t.get("name"),
+                    "matched_in": ("both" if input_match and output_match
+                                   else "input" if input_match else "output"),
+                    "input_preview": input_text[:300] if input_match else None,
+                    "output_preview": output_text[:300] if output_match else None,
+                })
+
+            if len(matches) >= limit:
+                break
+
+        return {
+            "query": query,
+            "search_in": search_in,
+            "total_traces_scanned": len(traces),
+            "matches_found": len(matches),
+            "matches": matches,
         }
 
     @mcp.tool()

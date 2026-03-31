@@ -20,6 +20,8 @@ class Config:
     cache_ttl_seconds: int = 300  # 5 min for today's data
     cache_ttl_historical_seconds: int = 3600  # 1 hour for past data
     cache_max_size: int = 256
+    # Default time range for analytics tools when user doesn't specify
+    default_time_range: str = "today"
 
     @property
     def is_cloud(self) -> bool:
@@ -48,4 +50,5 @@ class Config:
             cache_ttl_seconds=int(os.getenv("LANGFUSE_CACHE_TTL", "300")),
             cache_ttl_historical_seconds=int(os.getenv("LANGFUSE_CACHE_TTL_HISTORICAL", "3600")),
             cache_max_size=int(os.getenv("LANGFUSE_CACHE_MAX_SIZE", "256")),
+            default_time_range=os.getenv("LANGFUSE_DEFAULT_TIME_RANGE", "today"),
         )
