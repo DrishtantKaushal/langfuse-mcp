@@ -381,7 +381,16 @@ The official Langfuse MCP (5 tools) focuses on prompt management. This server pr
 | **User/tenant group aggregation** | **Yes** | No |
 | **Score write-back** | **Yes** | No |
 
-Other implementations provide data access (fetching raw traces, observations, sessions). This server adds a **compute layer** — analytics tools that aggregate, detect patterns, and compute statistics server-side, returning compact summaries instead of raw API dumps.
+Other implementations provide data access (fetching raw traces, observations, sessions) using synchronous HTTP clients. This server adds a **compute layer** — analytics tools that aggregate, detect patterns, and compute statistics server-side — plus an **async architecture** that's fundamentally faster.
+
+| Architecture | This server | Others |
+|---|:---:|:---:|
+| **Async HTTP client** | **Yes** (httpx.AsyncClient) | No (sync requests/httpx) |
+| **Concurrent observation fetching** | **Yes** (asyncio.gather) | No (sequential per-trace) |
+| **TTL caching** | **Yes** (live 5min, historical 1hr) | No |
+| **Adaptive rate limiting** | **Yes** (token bucket, 429 backoff) | No (fixed sleep) |
+| **Batch observation queries** | **Yes** (with auto-fallback) | No (N+1 per-trace) |
+| **Claude Code sub-agent** | **Yes** (.claude/agents/) | No |
 
 ### vs Platform-Embedded AI (Braintrust Loop, LangSmith Insights, Arize Alyx)
 
@@ -394,6 +403,69 @@ Other implementations provide data access (fetching raw traces, observations, se
 | Custom grouping/segmentation | Yes | Limited |
 | Write-back to Langfuse | Yes | Platform-specific |
 | Free | Yes | Paid tiers |
+
+---
+
+## Architecture
+
+### Why async httpx instead of the Langfuse SDK?
+
+The [Langfuse Python SDK](https://github.com/langfuse/langfuse-python) is excellent for *writing* traces (it batches and sends asynchronously in the background). But for *reading* traces at scale — which is what an analytics MCP server does — the SDK has a limitation: **its read API is synchronous**, built on the `requests` library.
+
+This server uses `httpx.AsyncClient` instead, which enables:
+
+- **Concurrent observation fetching** — fetch observations for 100 traces simultaneously via `asyncio.gather`, not one-by-one
+- **Non-blocking pagination** — paginate through thousands of traces without blocking the event loop
+- **Rate-limited concurrency** — `asyncio.Semaphore` + token bucket controls throughput without `time.sleep()` blocking
+
+**Measured impact:** `analyze_latency` with per-generation breakdown dropped from 110s to 20s (5.4x faster) on a self-hosted instance with 2.4M daily observations.
+
+### Caching strategy
+
+Two-tier in-memory TTL cache using `cachetools.TTLCache`:
+
+| Data age | TTL | Rationale |
+|---|---|---|
+| Today's data | 5 minutes | Still changing, short cache |
+| Historical data (before today) | 1 hour | Won't change, cache aggressively |
+
+The cache operates at the API page level. If you call `aggregate_by_group` then `compute_accuracy` for the same time range, the second call hits cache for all trace pages — only scores are fetched fresh.
+
+Configure via `LANGFUSE_CACHE_TTL` and `LANGFUSE_CACHE_TTL_HISTORICAL` (seconds).
+
+### Rate limiting
+
+A global token bucket rate limiter respects Langfuse API limits:
+
+| Instance type | Default RPM | Behavior |
+|---|---|---|
+| **Self-hosted** | Unlimited (0) | No artificial throttling. Full speed, limited only by your server. |
+| **Langfuse Cloud (Hobby)** | 30 req/min | Conservative default for Hobby tier |
+| **Langfuse Cloud (Pro/Team)** | Set `LANGFUSE_RATE_LIMIT_RPM=1000` | Higher throughput for paid plans |
+
+On HTTP 429 responses, the limiter automatically halves the RPM and reads the `Retry-After` header. This means the server adapts to any rate limit — cloud or self-hosted — without manual configuration.
+
+### Observation fetching: batch vs concurrent
+
+Analytics tools that need per-generation data (token percentiles, context breaches, latency breakdown) face the N+1 problem: one API call per trace to fetch its observations.
+
+This server uses a two-step strategy:
+
+1. **Try batch fetch** — fetch ALL observations for the time range in one paginated call, group by traceId in memory
+2. **If volume is too high** (>5000 pages / 500K+ observations) — **fall back to concurrent per-trace fetch** using `asyncio.gather` with semaphore-controlled concurrency
+
+This means the server handles both small projects (batch is faster) and large-scale deployments (concurrent targeted fetching avoids downloading millions of irrelevant observations).
+
+### Context isolation via sub-agent
+
+The server ships with a [Claude Code custom agent](https://docs.anthropic.com/en/docs/claude-code/agents) at `.claude/agents/langfuse-analyst.md`. When a user asks a Langfuse-related question, Claude Code can delegate to this agent, which:
+
+- Only loads Langfuse MCP tools (not other tools in the session)
+- Has a specialized system prompt with tool taxonomy and workflow patterns
+- Runs in an isolated context window, keeping the main conversation clean
+- Returns a summary to the parent conversation
+
+This prevents 33 tool schemas (~5000 tokens) from polluting every conversation.
 
 ---
 
