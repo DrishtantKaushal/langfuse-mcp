@@ -1,5 +1,6 @@
 """Data access tools — full Langfuse API coverage."""
 from __future__ import annotations
+import asyncio
 from typing import Any
 
 # Maps group names to the tool functions that belong to them
@@ -28,7 +29,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
 
     if _enabled("traces"):
         @mcp.tool()
-        def fetch_traces(
+        async def fetch_traces(
             limit: int = 50,
             offset: int = 0,
             user_id: str | None = None,
@@ -59,22 +60,22 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["orderBy"] = order_by
             if version:
                 params["version"] = version
-            return client.get_traces(**params)
+            return await client.get_traces(**params)
 
         @mcp.tool()
-        def fetch_trace(trace_id: str) -> dict:
+        async def fetch_trace(trace_id: str) -> dict:
             """Get detailed information about a specific trace including all observations.
 
             Use this when you have a trace ID and need the full trace with its spans,
             generations, and events.
             """
-            return client.get_trace(trace_id)
+            return await client.get_trace(trace_id)
 
     # -- Observations --
 
     if _enabled("observations"):
         @mcp.tool()
-        def fetch_observations(
+        async def fetch_observations(
             limit: int = 50,
             page: int = 1,
             trace_id: str | None = None,
@@ -99,19 +100,19 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            return client.get_observations(**params)
+            return await client.get_observations(**params)
 
         @mcp.tool()
-        def fetch_observation(observation_id: str) -> dict:
+        async def fetch_observation(observation_id: str) -> dict:
             """Get a single observation by ID. Returns full details including
             input/output, token usage, model, latency, and cost."""
-            return client.get_observation(observation_id)
+            return await client.get_observation(observation_id)
 
     # -- Sessions --
 
     if _enabled("sessions"):
         @mcp.tool()
-        def fetch_sessions(
+        async def fetch_sessions(
             limit: int = 50,
             page: int = 1,
             from_timestamp: str | None = None,
@@ -123,15 +124,15 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            return client.get_sessions(**params)
+            return await client.get_sessions(**params)
 
         @mcp.tool()
-        def get_session_details(session_id: str) -> dict:
+        async def get_session_details(session_id: str) -> dict:
             """Get full details of a session including all its traces."""
-            return client.get_session(session_id)
+            return await client.get_session(session_id)
 
         @mcp.tool()
-        def get_user_sessions(
+        async def get_user_sessions(
             user_id: str,
             limit: int = 50,
             from_timestamp: str | None = None,
@@ -144,20 +145,18 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            traces = client.fetch_all_traces(userId=user_id, max_pages=5, **params)
+            traces = await client.fetch_all_traces(userId=user_id, max_pages=5, **params)
             session_ids = list({t.get("sessionId") for t in traces if t.get("sessionId")})
-            sessions = []
-            for sid in session_ids[:limit]:
-                s = client.get_session(sid)
-                if "error" not in s:
-                    sessions.append(s)
+            tasks = [client.get_session(sid) for sid in session_ids[:limit]]
+            results = await asyncio.gather(*tasks)
+            sessions = [s for s in results if "error" not in s]
             return {"user_id": user_id, "session_count": len(sessions), "sessions": sessions}
 
     # -- Errors --
 
     if _enabled("errors"):
         @mcp.tool()
-        def find_exceptions(
+        async def find_exceptions(
             limit: int = 50,
             from_timestamp: str | None = None,
             to_timestamp: str | None = None,
@@ -169,14 +168,14 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            return client.get_observations(**params)
+            return await client.get_observations(**params)
 
         @mcp.tool()
-        def get_exception_details(trace_id: str) -> dict:
+        async def get_exception_details(trace_id: str) -> dict:
             """Get full exception/error details for a specific trace.
             Returns the trace with all observations, highlighting errors."""
-            trace = client.get_trace(trace_id)
-            observations = client.get_trace_observations(trace_id)
+            trace = await client.get_trace(trace_id)
+            observations = await client.get_trace_observations(trace_id)
             errors = [o for o in observations if o.get("statusMessage") or o.get("level") == "ERROR"]
             return {
                 "trace": trace,
@@ -186,7 +185,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
             }
 
         @mcp.tool()
-        def get_error_count(
+        async def get_error_count(
             from_timestamp: str | None = None,
             to_timestamp: str | None = None,
         ) -> dict:
@@ -196,7 +195,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            result = client.get_observations(**params)
+            result = await client.get_observations(**params)
             meta = result.get("meta", {})
             return {
                 "error_count": meta.get("totalItems", 0),
@@ -207,7 +206,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
 
     if _enabled("scores"):
         @mcp.tool()
-        def fetch_scores(
+        async def fetch_scores(
             limit: int = 50,
             page: int = 1,
             trace_id: str | None = None,
@@ -225,31 +224,31 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["fromTimestamp"] = from_timestamp
             if to_timestamp:
                 params["toTimestamp"] = to_timestamp
-            return client.get_scores(**params)
+            return await client.get_scores(**params)
 
     # -- Prompts --
 
     if _enabled("prompts"):
         @mcp.tool()
-        def list_prompts(limit: int = 50, page: int = 1, name: str | None = None) -> dict:
+        async def list_prompts(limit: int = 50, page: int = 1, name: str | None = None) -> dict:
             """List all prompts in the project."""
             params: dict[str, Any] = {"limit": limit, "page": page}
             if name:
                 params["name"] = name
-            return client.get_prompts(**params)
+            return await client.get_prompts(**params)
 
         @mcp.tool()
-        def get_prompt(name: str, version: int | None = None, label: str | None = None) -> dict:
+        async def get_prompt(name: str, version: int | None = None, label: str | None = None) -> dict:
             """Fetch a specific prompt by name. Optionally specify version or label."""
             params: dict[str, Any] = {}
             if version is not None:
                 params["version"] = version
             if label:
                 params["label"] = label
-            return client.get_prompt(name, **params)
+            return await client.get_prompt(name, **params)
 
         @mcp.tool()
-        def create_text_prompt(
+        async def create_text_prompt(
             name: str, prompt: str, labels: str | None = None, config: str | None = None,
         ) -> dict:
             """Create a new text prompt version. labels: comma-separated."""
@@ -259,10 +258,10 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 data["labels"] = [l.strip() for l in labels.split(",")]
             if config:
                 data["config"] = _json.loads(config)
-            return client.create_prompt(data)
+            return await client.create_prompt(data)
 
         @mcp.tool()
-        def create_chat_prompt(
+        async def create_chat_prompt(
             name: str, messages: str, labels: str | None = None, config: str | None = None,
         ) -> dict:
             """Create a new chat prompt version. messages: JSON string of [{role, content}]."""
@@ -272,38 +271,38 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 data["labels"] = [l.strip() for l in labels.split(",")]
             if config:
                 data["config"] = _json.loads(config)
-            return client.create_prompt(data)
+            return await client.create_prompt(data)
 
         @mcp.tool()
-        def update_prompt_labels(prompt_name: str, version: int, labels: str) -> dict:
+        async def update_prompt_labels(prompt_name: str, version: int, labels: str) -> dict:
             """Update labels for a specific prompt version. labels: comma-separated."""
-            return client.update_prompt_labels(prompt_name, version, [l.strip() for l in labels.split(",")])
+            return await client.update_prompt_labels(prompt_name, version, [l.strip() for l in labels.split(",")])
 
     # -- Datasets --
 
     if _enabled("datasets"):
         @mcp.tool()
-        def list_datasets(limit: int = 50, page: int = 1) -> dict:
+        async def list_datasets(limit: int = 50, page: int = 1) -> dict:
             """List all datasets in the project."""
-            return client.get_datasets(limit=limit, page=page)
+            return await client.get_datasets(limit=limit, page=page)
 
         @mcp.tool()
-        def get_dataset(dataset_name: str) -> dict:
+        async def get_dataset(dataset_name: str) -> dict:
             """Get metadata for a specific dataset."""
-            return client.get_dataset(dataset_name)
+            return await client.get_dataset(dataset_name)
 
         @mcp.tool()
-        def list_dataset_items(dataset_name: str, limit: int = 50, page: int = 1) -> dict:
+        async def list_dataset_items(dataset_name: str, limit: int = 50, page: int = 1) -> dict:
             """List items in a dataset."""
-            return client.get_dataset_items(dataset_name, limit=limit, page=page)
+            return await client.get_dataset_items(dataset_name, limit=limit, page=page)
 
         @mcp.tool()
-        def get_dataset_item(item_id: str) -> dict:
+        async def get_dataset_item(item_id: str) -> dict:
             """Get a single dataset item by ID."""
-            return client.get_dataset_item(item_id)
+            return await client.get_dataset_item(item_id)
 
         @mcp.tool()
-        def create_dataset(name: str, description: str | None = None, metadata: str | None = None) -> dict:
+        async def create_dataset(name: str, description: str | None = None, metadata: str | None = None) -> dict:
             """Create a new dataset. metadata: JSON string."""
             import json as _json
             data: dict[str, Any] = {"name": name}
@@ -311,10 +310,10 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 data["description"] = description
             if metadata:
                 data["metadata"] = _json.loads(metadata)
-            return client.create_dataset(data)
+            return await client.create_dataset(data)
 
         @mcp.tool()
-        def create_dataset_item(
+        async def create_dataset_item(
             dataset_name: str, input: str, expected_output: str | None = None,
             metadata: str | None = None, source_trace_id: str | None = None,
             source_observation_id: str | None = None, item_id: str | None = None,
@@ -332,18 +331,18 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 data["sourceObservationId"] = source_observation_id
             if item_id:
                 data["id"] = item_id
-            return client.create_dataset_item(data)
+            return await client.create_dataset_item(data)
 
         @mcp.tool()
-        def delete_dataset_item(item_id: str) -> dict:
+        async def delete_dataset_item(item_id: str) -> dict:
             """Delete a dataset item by ID."""
-            return client.delete_dataset_item(item_id)
+            return await client.delete_dataset_item(item_id)
 
     # -- Schema --
 
     if _enabled("schema"):
         @mcp.tool()
-        def get_data_schema() -> dict:
+        async def get_data_schema() -> dict:
             """Get the data schema for the Langfuse project. Useful for understanding
             available fields and data types."""
             return {
