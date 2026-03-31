@@ -56,7 +56,8 @@ def _extract_input_text(trace: dict) -> str:
 
 
 async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags, user_id,
-                             max_pages=50):
+                             max_pages=10):
+    """Fetch traces for a time range. Default 10 pages (1000 traces) for fast analytics."""
     start, end = client.resolve_time_range(time_range, start_date, end_date)
     params = {
         "fromTimestamp": start.isoformat(),
@@ -68,6 +69,28 @@ async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags
     if user_id:
         params["userId"] = user_id
     return await client.fetch_all_traces(**params)
+
+
+async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tags,
+                                    max_trace_pages=10, max_score_pages=10):
+    """Fetch traces and scores in parallel. Returns (traces, score_map)."""
+    start, end = client.resolve_time_range(time_range, start_date, end_date)
+    ts_params = {
+        "fromTimestamp": start.isoformat(),
+        "toTimestamp": end.isoformat(),
+    }
+    if tags:
+        ts_params["tags"] = tags
+
+    traces_coro = client.fetch_all_traces(max_pages=max_trace_pages, **ts_params)
+    scores_coro = client.fetch_all_scores(
+        fromTimestamp=ts_params["fromTimestamp"],
+        toTimestamp=ts_params["toTimestamp"],
+        max_pages=max_score_pages,
+    )
+    traces, scores = await asyncio.gather(traces_coro, scores_coro)
+    score_map = {s.get("traceId", ""): float(s["value"]) for s in scores if s.get("value") is not None}
+    return traces, score_map
 
 
 def register_analytics_tools(mcp, client):
@@ -97,7 +120,10 @@ def register_analytics_tools(mcp, client):
         Set exclude_internal=true and LANGFUSE_INTERNAL_DOMAINS env var
         to filter out internal team users (only relevant with group_by='domain').
         """
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
+        # Fetch traces and scores in parallel
+        traces, trace_scores = await _fetch_traces_and_scores(
+            client, time_range, start_date, end_date, tags,
+        )
 
         groups: dict[str, dict] = defaultdict(lambda: {
             "traces": 0, "sessions": set(), "users": set(),
@@ -105,22 +131,24 @@ def register_analytics_tools(mcp, client):
             "total_cost": 0.0, "total_latency": 0.0, "latency_count": 0,
         })
 
-        for t in traces:
+        def _group_key(t):
             if group_by == "domain":
-                key = client.extract_domain(t.get("userId"))
-                if not key:
-                    continue
-                if exclude_internal and client.is_internal(key):
-                    continue
+                k = client.extract_domain(t.get("userId"))
+                if not k or (exclude_internal and client.is_internal(k)):
+                    return None
+                return k
             elif group_by == "name":
-                key = t.get("name") or "unknown"
+                return t.get("name") or "unknown"
             elif group_by == "userId":
-                key = t.get("userId") or "unknown"
+                return t.get("userId") or "unknown"
             elif group_by == "tag":
-                key = ",".join(t.get("tags", [])) or "untagged"
-            else:
-                key = str(t.get(group_by, "unknown"))
+                return ",".join(t.get("tags", [])) or "untagged"
+            return str(t.get(group_by, "unknown"))
 
+        for t in traces:
+            key = _group_key(t)
+            if key is None:
+                continue
             g = groups[key]
             g["traces"] += 1
             if t.get("sessionId"):
@@ -135,36 +163,13 @@ def register_analytics_tools(mcp, client):
                 g["total_latency"] += float(latency)
                 g["latency_count"] += 1
 
-        # Fetch scores for accuracy
-        start, end = client.resolve_time_range(time_range, start_date, end_date)
-        scores = await client.fetch_all_scores(
-            fromTimestamp=start.isoformat(), toTimestamp=end.isoformat(), max_pages=20,
-        )
-        trace_scores = {s.get("traceId", ""): float(s["value"]) for s in scores if s.get("value") is not None}
-
-        trace_domain_map = {}
-        for t in traces:
-            if group_by == "domain":
-                key = client.extract_domain(t.get("userId"))
-                if not key or (exclude_internal and client.is_internal(key)):
-                    continue
-            elif group_by == "name":
-                key = t.get("name") or "unknown"
-            elif group_by == "userId":
-                key = t.get("userId") or "unknown"
-            elif group_by == "tag":
-                key = ",".join(t.get("tags", [])) or "untagged"
-            else:
-                key = str(t.get(group_by, "unknown"))
-            trace_domain_map[t.get("id", "")] = key
-
-        for trace_id, score in trace_scores.items():
-            key = trace_domain_map.get(trace_id)
-            if key and key in groups:
+            # Apply score if available
+            score = trace_scores.get(t.get("id", ""))
+            if score is not None:
                 if score >= 0.5:
-                    groups[key]["correct"] += 1
+                    g["correct"] += 1
                 else:
-                    groups[key]["incorrect"] += 1
+                    g["incorrect"] += 1
 
         result = []
         for key, g in groups.items():
@@ -203,15 +208,9 @@ def register_analytics_tools(mcp, client):
         group_by: 'domain', 'name', 'userId'. bucket_by: 'week', 'day' for trends.
         score_name: filter to a specific score (default: all scores).
         """
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
-        start, end = client.resolve_time_range(time_range, start_date, end_date)
-
-        score_params: dict = {"fromTimestamp": start.isoformat(), "toTimestamp": end.isoformat(), "max_pages": 30}
-        if score_name:
-            score_params["name"] = score_name
-        scores = await client.fetch_all_scores(**score_params)
-
-        trace_scores = {s["traceId"]: float(s["value"]) for s in scores if s.get("value") is not None}
+        traces, trace_scores = await _fetch_traces_and_scores(
+            client, time_range, start_date, end_date, tags,
+        )
         trace_map = {t["id"]: t for t in traces}
 
         buckets: dict[str, dict] = defaultdict(lambda: {"correct": 0, "incorrect": 0, "total": 0})
@@ -282,11 +281,10 @@ def register_analytics_tools(mcp, client):
         This catches LLM quality failures, NOT Python exceptions.
         Use find_exceptions for code errors.
         """
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
-        start, end = client.resolve_time_range(time_range, start_date, end_date)
-
-        scores = await client.fetch_all_scores(fromTimestamp=start.isoformat(), toTimestamp=end.isoformat(), max_pages=20)
-        negative_traces = {s["traceId"] for s in scores if s.get("value") is not None and float(s["value"]) < 0.5}
+        traces, trace_scores = await _fetch_traces_and_scores(
+            client, time_range, start_date, end_date, tags,
+        )
+        negative_traces = {tid for tid, val in trace_scores.items() if val < 0.5}
 
         failures = []
         pattern_counts: dict[str, int] = defaultdict(int)
