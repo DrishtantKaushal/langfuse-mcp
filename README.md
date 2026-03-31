@@ -3,9 +3,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
+<!-- Agent-readable metadata -->
+<!-- llms.txt: ./llms.txt -->
+<!-- keywords: langfuse, mcp, model-context-protocol, llm-observability, trace-analysis, ai-agents, claude-code, cursor, codex, langfuse-mcp, llm-analytics, token-usage, accuracy-metrics, failure-detection, cost-tracking, latency-analysis, session-analytics, context-window, prompt-management, dataset-management, mcp-server, llm-monitoring, ai-observability, openai, anthropic, langchain -->
+
 [Model Context Protocol](https://modelcontextprotocol.io) server for [Langfuse](https://langfuse.com) observability. Query traces, analyze accuracy, detect failures, track costs, debug latency, manage prompts and datasets.
 
-**34 tools** across data access and analytics. Works with Claude Code, Codex CLI, Cursor, and any MCP-compatible client.
+**34 tools** across data access and analytics. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
 
 ## Why this MCP server?
 

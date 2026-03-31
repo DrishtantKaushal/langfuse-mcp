@@ -1,0 +1,37 @@
+# langfuse-mcp
+
+> Langfuse MCP server with built-in analytics. 34 tools for LLM observability.
+
+## What is this?
+
+A Model Context Protocol (MCP) server that connects AI coding agents (Claude Code, Cursor, Codex) to Langfuse, the open-source LLM observability platform. It provides full data access (traces, observations, sessions, scores, prompts, datasets) plus 9 analytics tools that compute insights server-side.
+
+## Who is this for?
+
+Teams running LLM applications who use Langfuse for observability and want to query their trace data from AI coding agents. Works with Langfuse Cloud and self-hosted instances.
+
+## Install
+
+```bash
+claude mcp add -e LANGFUSE_PUBLIC_KEY=pk-lf-... -e LANGFUSE_SECRET_KEY=sk-lf-... langfuse-mcp -- uvx langfuse-mcp
+```
+
+## Key capabilities
+
+- Fetch and search traces, observations, sessions, scores
+- Compute accuracy metrics from feedback scores
+- Detect LLM output failures (pattern matching + feedback cross-reference)
+- Calculate token usage percentiles (TP50/TP90/TP95/TP99)
+- Scan for context window breaches per generation
+- Analyze multi-turn session depth and engagement
+- Break down costs by user group, agent, or time period
+- Analyze latency at trace and per-model level
+- Write scores back to Langfuse to annotate traces
+- Manage prompts and datasets
+- Selective tool loading to reduce token overhead
+
+## Links
+
+- Repository: https://github.com/DrishtantKaushal/langfuse-mcp
+- Langfuse: https://langfuse.com
+- MCP: https://modelcontextprotocol.io
