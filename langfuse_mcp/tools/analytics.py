@@ -61,8 +61,9 @@ def _resolve_time_range(client, time_range):
 
 
 async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags, user_id,
-                             max_pages=10):
-    """Fetch traces for a time range. Default 10 pages (1000 traces) for fast analytics."""
+                             max_pages=10, domain=None):
+    """Fetch traces for a time range. Default 10 pages (1000 traces) for fast analytics.
+    If domain is set, post-filters traces to only include users from that domain."""
     time_range = _resolve_time_range(client, time_range)
     start, end = client.resolve_time_range(time_range, start_date, end_date)
     params = {
@@ -74,7 +75,11 @@ async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags
         params["tags"] = tags
     if user_id:
         params["userId"] = user_id
-    return await client.fetch_all_traces(**params)
+    traces = await client.fetch_all_traces(**params)
+    if domain:
+        domain_lower = domain.lower()
+        traces = [t for t in traces if (client.extract_domain(t.get("userId")) or "").lower() == domain_lower]
+    return traces
 
 
 async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tags,
@@ -768,6 +773,7 @@ def register_analytics_tools(mcp, client):
         end_date: str | None = None,
         tags: str | None = None,
         user_id: str | None = None,
+        domain: str | None = None,
         name: str | None = None,
         group_by: str | None = None,
         exclude_internal: bool = False,
@@ -776,13 +782,16 @@ def register_analytics_tools(mcp, client):
         """List user queries extracted from trace inputs.
 
         Use this to answer: 'What are merchants asking?', 'What queries came in today?',
-        'What did users ask about?'. Returns extracted query text with metadata.
+        'What did users ask about?', 'Show star insurance queries'. Returns extracted
+        query text with metadata.
 
+        domain: filter by email domain (e.g. 'starinsurance.in'). Use this when the user
+        asks about a company/org by name instead of a specific user email.
         group_by: 'name' (agent), 'userId', 'domain'. Set exclude_internal=true to
         filter internal team users.
         """
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, user_id,
+            client, time_range, start_date, end_date, tags, user_id, domain=domain,
         )
 
         # Apply name filter if provided
@@ -794,8 +803,8 @@ def register_analytics_tools(mcp, client):
 
         for t in traces:
             if exclude_internal:
-                domain = client.extract_domain(t.get("userId"))
-                if client.is_internal(domain):
+                user_domain = client.extract_domain(t.get("userId"))
+                if client.is_internal(user_domain):
                     continue
 
             query_text = _extract_input_text(t)
@@ -840,6 +849,7 @@ def register_analytics_tools(mcp, client):
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
+        domain: str | None = None,
         threshold_seconds: float | None = None,
         top_n: int = 20,
         group_by: str | None = None,
@@ -849,12 +859,13 @@ def register_analytics_tools(mcp, client):
         Use this to answer: 'Which traces were slowest?', 'Show me traces taking >30s',
         'What's causing high latency today?'.
 
+        domain: filter by email domain (e.g. 'acme.com').
         If threshold_seconds is set, returns all traces above that threshold.
         Otherwise returns the top_n slowest traces.
         group_by: 'name' (agent), 'userId', 'domain'.
         """
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, None,
+            client, time_range, start_date, end_date, tags, None, domain=domain,
         )
 
         with_latency = []
@@ -919,6 +930,7 @@ def register_analytics_tools(mcp, client):
         start_date: str | None = None,
         end_date: str | None = None,
         tags: str | None = None,
+        domain: str | None = None,
         search_in: str = "both",
         limit: int = 50,
     ) -> dict:
@@ -927,11 +939,12 @@ def register_analytics_tools(mcp, client):
         Use this to answer: 'Find traces mentioning refund', 'Which queries asked about
         payment failures?', 'Show traces related to order ID X'.
 
+        domain: filter by email domain (e.g. 'acme.com').
         search_in: 'input', 'output', or 'both' (default).
         query: keyword or phrase to search for (case-insensitive).
         """
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, None,
+            client, time_range, start_date, end_date, tags, None, domain=domain,
         )
 
         pattern = re.compile(re.escape(query), re.IGNORECASE)
