@@ -30,7 +30,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
     if _enabled("traces"):
         @mcp.tool()
         async def fetch_traces(
-            limit: int = 20,
+            limit: int = 50,
             offset: int = 0,
             user_id: str | None = None,
             name: str | None = None,
@@ -40,10 +40,10 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
             order_by: str | None = None,
             version: str | None = None,
         ) -> dict:
-            """Fetch traces from Langfuse. Returns compact metadata (no input/output content).
+            """Fetch traces from Langfuse with optional filters.
 
-            For analytical questions (accuracy, failures, costs), use the analytics tools instead.
-            Use fetch_trace(trace_id) to get full details for a specific trace.
+            Use this to list recent traces, filter by user or tags, or search within a time range.
+            tags: comma-separated if multiple. Timestamps in ISO 8601 format.
             """
             params: dict[str, Any] = {"limit": limit, "offset": offset}
             if user_id:
@@ -60,16 +60,7 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["orderBy"] = order_by
             if version:
                 params["version"] = version
-            result = await client.get_traces(**params)
-            # Strip large fields to keep responses compact
-            if "data" in result:
-                for trace in result["data"]:
-                    trace.pop("input", None)
-                    trace.pop("output", None)
-                    trace.pop("observations", None)
-                    if "metadata" in trace and isinstance(trace["metadata"], dict) and len(str(trace["metadata"])) > 500:
-                        trace["metadata"] = {"_truncated": True}
-            return result
+            return await client.get_traces(**params)
 
         @mcp.tool()
         async def fetch_trace(trace_id: str) -> dict:
