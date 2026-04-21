@@ -8,7 +8,7 @@
 
 ## Reporting Vulnerabilities
 
-If you discover a security vulnerability, please report it via [GitHub Issues](https://github.com/DrishtantKaushal/langfuse-mcp/issues) with the label `security`.
+If you discover a security vulnerability, please report it via [GitHub Issues](https://github.com/DrishtantKaushal/LangfuseMCP/issues) with the label `security`.
 
 For sensitive disclosures, contact the maintainer directly through GitHub.
 

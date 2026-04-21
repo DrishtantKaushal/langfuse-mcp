@@ -1,6 +1,6 @@
-# langfuse-mcp
+# langfuse-mcp-server
 
-> Langfuse MCP server with built-in analytics. 34 tools for LLM observability.
+> Langfuse MCP server with built-in analytics, multi-project routing, and OAuth. 56 tools for LLM observability.
 
 ## What is this?
 
@@ -13,7 +13,7 @@ Teams running LLM applications who use Langfuse for observability and want to qu
 ## Install
 
 ```bash
-claude mcp add -e LANGFUSE_PUBLIC_KEY=pk-lf-... -e LANGFUSE_SECRET_KEY=sk-lf-... langfuse-mcp -- uvx langfuse-mcp
+claude mcp add -e LANGFUSE_PUBLIC_KEY=pk-lf-... -e LANGFUSE_SECRET_KEY=sk-lf-... langfuse-mcp -- uvx langfuse-mcp-server
 ```
 
 ## Key capabilities
@@ -32,6 +32,6 @@ claude mcp add -e LANGFUSE_PUBLIC_KEY=pk-lf-... -e LANGFUSE_SECRET_KEY=sk-lf-...
 
 ## Links
 
-- Repository: https://github.com/DrishtantKaushal/langfuse-mcp
+- Repository: https://github.com/DrishtantKaushal/LangfuseMCP
 - Langfuse: https://langfuse.com
 - MCP: https://modelcontextprotocol.io

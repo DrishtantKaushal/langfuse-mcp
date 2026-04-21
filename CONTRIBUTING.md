@@ -5,8 +5,8 @@ Contributions are welcome. Here's how to get started.
 ## Development Setup
 
 ```bash
-git clone https://github.com/DrishtantKaushal/langfuse-mcp.git
-cd langfuse-mcp
+git clone https://github.com/DrishtantKaushal/LangfuseMCP.git
+cd LangfuseMCP
 uv venv .venv && source .venv/bin/activate
 uv pip install -e "."
 ```

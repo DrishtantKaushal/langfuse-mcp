@@ -1,7 +1,7 @@
 [project]
-name = "langfuse-mcp"
+name = "langfuse-mcp-server"
 version = "0.1.0"
-description = "Everything the community Langfuse MCP does, plus analytics. Drop-in replacement with token percentiles, accuracy metrics, failure detection, cost breakdowns, session analytics, latency analysis, and context breach scanning."
+description = "Langfuse MCP server with built-in analytics, multi-project routing, and Google OAuth. Token percentiles, accuracy metrics, failure detection, cost breakdowns, session analytics, latency analysis, context breach scanning — plus a hosted-remote deployment story."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-langfuse-mcp = "langfuse_mcp.server:main"
+langfuse-mcp-server = "langfuse_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]

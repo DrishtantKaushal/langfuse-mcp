@@ -30,7 +30,7 @@ This Code of Conduct applies within all project spaces — GitHub issues, pull r
 
 ## Reporting
 
-To report issues, contact the maintainer via [GitHub Issues](https://github.com/DrishtantKaushal/langfuse-mcp/issues).
+To report issues, contact the maintainer via [GitHub Issues](https://github.com/DrishtantKaushal/LangfuseMCP/issues).
 
 ## Attribution
 

@@ -17,4 +17,4 @@ ENV MCP_TRANSPORT=streamable-http \
     MCP_HOST=0.0.0.0 \
     MCP_PORT=8000
 
-CMD ["langfuse-mcp"]
+CMD ["langfuse-mcp-server"]

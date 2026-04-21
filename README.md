@@ -56,7 +56,7 @@ claude mcp add \
   -e LANGFUSE_SECRET_KEY=sk-lf-... \
   -e LANGFUSE_HOST=https://cloud.langfuse.com \
   --scope project \
-  langfuse-mcp -- uvx langfuse-mcp
+  langfuse-mcp -- uvx langfuse-mcp-server
 ```
 
 #### Codex CLI
@@ -66,7 +66,7 @@ codex mcp add langfuse-mcp \
   --env LANGFUSE_PUBLIC_KEY=pk-lf-... \
   --env LANGFUSE_SECRET_KEY=sk-lf-... \
   --env LANGFUSE_HOST=https://cloud.langfuse.com \
-  -- uvx langfuse-mcp
+  -- uvx langfuse-mcp-server
 ```
 
 #### Cursor
@@ -78,7 +78,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "langfuse-mcp": {
       "command": "uvx",
-      "args": ["langfuse-mcp"],
+      "args": ["langfuse-mcp-server"],
       "env": {
         "LANGFUSE_PUBLIC_KEY": "pk-lf-...",
         "LANGFUSE_SECRET_KEY": "sk-lf-...",
@@ -96,8 +96,8 @@ Restart your CLI, then test with `/mcp` (Claude Code) or `codex mcp list` (Codex
 ### Manual install (alternative to uvx)
 
 ```bash
-pip install langfuse-mcp
-langfuse-mcp serve
+pip install langfuse-mcp-server
+langfuse-mcp-server
 ```
 
 ---
@@ -127,7 +127,7 @@ A production-ready `Dockerfile` is checked into the repo (non-root user, pinned 
 Pull the published image:
 
 ```bash
-docker pull ghcr.io/drishtantkaushal/langfuse-mcp:latest
+docker pull ghcr.io/drishtantkaushal/langfusemcp:latest
 ```
 
 Or build from source:
@@ -151,7 +151,7 @@ docker run -d \
   -e GOOGLE_CLIENT_ID=... \
   -e GOOGLE_CLIENT_SECRET=... \
   -e ALLOWED_EMAIL_DOMAINS=yourcompany.com \
-  ghcr.io/drishtantkaushal/langfuse-mcp:latest
+  ghcr.io/drishtantkaushal/langfusemcp:latest
 ```
 
 ### Reverse proxy
@@ -532,17 +532,17 @@ Load only the tool groups you need to reduce token overhead:
 
 ```bash
 # Only load traces and analytics tools
-LANGFUSE_TOOLS=traces,analytics langfuse-mcp serve
+LANGFUSE_TOOLS=traces,analytics langfuse-mcp-server
 
 # Only load prompts and datasets
-LANGFUSE_TOOLS=prompts,datasets langfuse-mcp serve
+LANGFUSE_TOOLS=prompts,datasets langfuse-mcp-server
 
 # In Claude Code
 claude mcp add \
   -e LANGFUSE_PUBLIC_KEY=pk-lf-... \
   -e LANGFUSE_SECRET_KEY=sk-lf-... \
   -e LANGFUSE_TOOLS=traces,observations,analytics \
-  langfuse-mcp -- uvx langfuse-mcp
+  langfuse-mcp -- uvx langfuse-mcp-server
 ```
 
 Available groups:
