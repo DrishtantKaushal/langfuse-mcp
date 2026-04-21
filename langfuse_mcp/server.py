@@ -72,6 +72,18 @@ Set LANGFUSE_INTERNAL_DOMAINS env var to filter internal users.
 """,
 )
 
+
+# Liveness/readiness probe for Kubernetes and other orchestrators. Not behind
+# OAuth — kubelet probes run without credentials. In stdio transport no HTTP
+# server is started, so this decorator is effectively a no-op.
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
 # Selective tool loading: LANGFUSE_TOOLS=traces,analytics or --tools traces,prompts
 # Available groups: traces, observations, sessions, errors, scores, prompts, datasets, schema, analytics
 _enabled_tools = os.getenv("LANGFUSE_TOOLS", "").strip()

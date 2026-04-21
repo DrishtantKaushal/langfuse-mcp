@@ -220,6 +220,12 @@ OAuth metadata endpoint returns JSON (used by Claude.ai to auto-register):
 curl https://mcp.yourcompany.com/.well-known/oauth-authorization-server
 ```
 
+Liveness/readiness probe — unauthenticated `GET /health` returns HTTP 200 with `{"status": "ok"}`, suitable for Kubernetes probes:
+
+```bash
+curl -i https://mcp.yourcompany.com/health
+```
+
 ---
 
 ## Multi-project support
