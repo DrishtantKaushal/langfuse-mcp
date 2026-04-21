@@ -1,0 +1,43 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# CI / local tooling
+.github
+
+# Editors / OS
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+build
+dist
+
+# Virtual envs (never ship these — can leak installed dev creds)
+.venv
+.venv_*
+venv
+env
+
+# Secrets / local config (defense in depth — CI should never have these either)
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials.json
+
+# Tests and examples — not needed at runtime
+tests/
+examples/

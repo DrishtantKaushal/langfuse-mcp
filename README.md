@@ -120,15 +120,38 @@ LANGFUSE_HOST=https://your-langfuse-instance.example
 
 Without OAuth env vars, the endpoint is unauthenticated — suitable only for local testing. See Google OAuth setup below for production.
 
-### Dockerfile
+### Docker
 
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir .
-EXPOSE 8000
-CMD ["langfuse-mcp"]
+A production-ready `Dockerfile` is checked into the repo (non-root user, pinned base, `.dockerignore` to prevent secret leakage). Each tagged release auto-publishes a multi-arch image to GitHub Container Registry via [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
+
+Pull the published image:
+
+```bash
+docker pull ghcr.io/drishtantkaushal/langfuse-mcp:latest
+```
+
+Or build from source:
+
+```bash
+docker build -t langfuse-mcp .
+```
+
+Run (all secrets injected via `-e`, never baked into the image):
+
+```bash
+docker run -d \
+  --name langfuse-mcp \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -e MCP_TRANSPORT=streamable-http \
+  -e MCP_BASE_URL=https://mcp.yourcompany.com \
+  -e LANGFUSE_PUBLIC_KEY=pk-lf-... \
+  -e LANGFUSE_SECRET_KEY=sk-lf-... \
+  -e LANGFUSE_HOST=https://cloud.langfuse.com \
+  -e GOOGLE_CLIENT_ID=... \
+  -e GOOGLE_CLIENT_SECRET=... \
+  -e ALLOWED_EMAIL_DOMAINS=yourcompany.com \
+  ghcr.io/drishtantkaushal/langfuse-mcp:latest
 ```
 
 ### Reverse proxy
