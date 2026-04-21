@@ -123,13 +123,44 @@ class LangfuseClient:
                 await asyncio.sleep(2 ** attempt)
         return {"error": "max_retries_exceeded"}
 
-    async def _delete(self, endpoint: str) -> dict:
+    async def _delete(self, endpoint: str, data: dict | None = None) -> dict:
         async with self._semaphore:
             await self._rate_limiter.acquire()
-            r = await self._http.delete(f"{self.base_url}/{endpoint}")
+            if data is not None:
+                r = await self._http.request(
+                    "DELETE", f"{self.base_url}/{endpoint}", json=data
+                )
+            else:
+                r = await self._http.delete(f"{self.base_url}/{endpoint}")
         if r.status_code in (200, 204):
+            if r.status_code == 200 and r.text:
+                try:
+                    return r.json()
+                except Exception:
+                    pass
             return {"success": True}
-        return {"error": f"HTTP {r.status_code}"}
+        return {"error": f"HTTP {r.status_code}", "body": r.text[:500]}
+
+    async def _patch(self, endpoint: str, data: dict) -> dict:
+        for attempt in range(1, self.config.max_retries + 1):
+            try:
+                async with self._semaphore:
+                    await self._rate_limiter.acquire()
+                    r = await self._http.patch(f"{self.base_url}/{endpoint}", json=data)
+                if r.status_code == 200:
+                    return r.json()
+                if r.status_code == 429:
+                    self._rate_limiter.backoff()
+                    await asyncio.sleep(int(r.headers.get("Retry-After", str(2 ** attempt))))
+                    continue
+                if attempt == self.config.max_retries:
+                    return {"error": f"HTTP {r.status_code}", "body": r.text[:500]}
+                await asyncio.sleep(2 ** attempt)
+            except Exception as e:
+                if attempt == self.config.max_retries:
+                    return {"error": str(e)}
+                await asyncio.sleep(2 ** attempt)
+        return {"error": "max_retries_exceeded"}
 
     async def _paginate(self, endpoint: str, params: dict, key: str = "data",
                         max_pages: int | None = None) -> list[dict]:
@@ -256,6 +287,13 @@ class LangfuseClient:
     async def create_score(self, data: dict) -> dict:
         return await self._post("scores", data)
 
+    # --- Scores v2 ---
+    async def get_scores_v2(self, **kwargs) -> dict:
+        return await self._get_cached("v2/scores", kwargs)
+
+    async def get_score_v2(self, score_id: str) -> dict:
+        return await self._get_cached(f"v2/scores/{score_id}", {})
+
     # --- Prompts ---
     async def get_prompts(self, **kwargs) -> dict:
         return await self._get_cached("prompts", kwargs)
@@ -299,6 +337,57 @@ class LangfuseClient:
 
     async def delete_dataset_item(self, item_id: str) -> dict:
         return await self._delete(f"dataset-items/{item_id}")
+
+    # --- Prompts v2 (supports resolve=false) ---
+    async def get_prompt_v2(self, name: str, **kwargs) -> dict:
+        return await self._get_cached(f"v2/prompts/{name}", kwargs)
+
+    # --- Annotation Queues ---
+    async def get_annotation_queues(self, **kwargs) -> dict:
+        return await self._get_cached("annotation-queues", kwargs)
+
+    async def create_annotation_queue(self, data: dict) -> dict:
+        return await self._post("annotation-queues", data)
+
+    async def get_annotation_queue(self, queue_id: str) -> dict:
+        return await self._get_cached(f"annotation-queues/{queue_id}", {})
+
+    async def get_annotation_queue_items(self, queue_id: str, **kwargs) -> dict:
+        return await self._get_cached(f"annotation-queues/{queue_id}/items", kwargs)
+
+    async def get_annotation_queue_item(self, queue_id: str, item_id: str) -> dict:
+        return await self._get_cached(
+            f"annotation-queues/{queue_id}/items/{item_id}", {}
+        )
+
+    async def create_annotation_queue_item(self, queue_id: str, data: dict) -> dict:
+        return await self._post(f"annotation-queues/{queue_id}/items", data)
+
+    async def update_annotation_queue_item(
+        self, queue_id: str, item_id: str, data: dict
+    ) -> dict:
+        return await self._patch(
+            f"annotation-queues/{queue_id}/items/{item_id}", data
+        )
+
+    async def delete_annotation_queue_item(self, queue_id: str, item_id: str) -> dict:
+        return await self._delete(
+            f"annotation-queues/{queue_id}/items/{item_id}"
+        )
+
+    async def create_annotation_queue_assignment(
+        self, queue_id: str, user_id: str
+    ) -> dict:
+        return await self._post(
+            f"annotation-queues/{queue_id}/assignments", {"userId": user_id}
+        )
+
+    async def delete_annotation_queue_assignment(
+        self, queue_id: str, user_id: str
+    ) -> dict:
+        return await self._delete(
+            f"annotation-queues/{queue_id}/assignments", data={"userId": user_id}
+        )
 
     # --- Metrics ---
     async def get_daily_metrics(self, **kwargs) -> dict:

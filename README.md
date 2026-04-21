@@ -9,7 +9,7 @@
 
 [Model Context Protocol](https://modelcontextprotocol.io) server for [Langfuse](https://langfuse.com) observability. Query traces, analyze accuracy, detect failures, track costs, debug latency, manage prompts and datasets.
 
-**34 tools** across data access and analytics. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
+**47 tools** across data access and analytics. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
 
 ## Why this MCP server?
 
@@ -99,6 +99,103 @@ langfuse-mcp serve
 
 ---
 
+## Hosting as a remote service
+
+Run as a long-lived HTTP service so multiple users connect to a single instance — required for [Claude.ai custom Connectors](https://support.anthropic.com/en/articles/11175166-about-custom-connectors-using-remote-mcp), and useful for team-wide access without distributing Langfuse API keys per user.
+
+Enabled via env vars; no code changes.
+
+### Minimum setup
+
+```bash
+MCP_TRANSPORT=streamable-http
+MCP_BASE_URL=https://mcp.yourcompany.com
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://your-langfuse-instance.example
+```
+
+Without OAuth env vars, the endpoint is unauthenticated — suitable only for local testing. See Google OAuth setup below for production.
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir .
+EXPOSE 8000
+CMD ["langfuse-mcp"]
+```
+
+### Reverse proxy
+
+Terminate TLS in front (nginx, Caddy, Cloudflare). MCP endpoint is at `/mcp/` (trailing slash). Because responses stream, the proxy must:
+
+- **Disable response buffering** — nginx: `proxy_buffering off;`
+- **Allow read timeout ≥ 5 minutes** — some analytics queries legitimately run several minutes
+- **Speak HTTP/1.1 with keepalive upstream**
+
+### Google OAuth
+
+In your Google Cloud project:
+
+1. **APIs & Services → OAuth consent screen**
+   - User type: **Internal** (restricts sign-in to your Google Workspace domain)
+   - Scopes: `openid`, `https://www.googleapis.com/auth/userinfo.email`
+2. **Credentials → Create OAuth client ID → Web application**
+   - Authorized redirect URI: `https://{your-base-url}/auth/callback`
+   - Copy the Client ID and Client Secret
+
+Set:
+
+```bash
+GOOGLE_CLIENT_ID=....apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+```
+
+OAuth activates when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `MCP_BASE_URL` are all set. With an Internal consent screen, Google rejects non-Workspace sign-ins at the identity layer — the server never sees those attempts.
+
+### Optional email allowlist
+
+For narrower control than "anyone in the Workspace":
+
+```bash
+# either, or both
+ALLOWED_EMAIL_DOMAINS=yourcompany.com
+ALLOWED_EMAILS=alice@yourcompany.com,bob@yourcompany.com
+```
+
+When set, every tool call verifies the caller's `email_verified` claim and checks membership before proceeding. When unset, the server trusts whatever the OAuth provider returns.
+
+### Adding to Claude.ai
+
+Once hosted at `https://mcp.yourcompany.com`:
+
+1. Claude.ai → Settings → Connectors → Add custom connector
+2. **Remote MCP server URL**: `https://mcp.yourcompany.com/mcp/`
+3. **Leave the OAuth Client ID / Secret fields empty** — the server uses Dynamic Client Registration; those fields are for a different deployment pattern.
+4. Click Add → Google sign-in popup → done.
+
+### Verifying the deploy
+
+Auth enabled, expect 401:
+
+```bash
+curl -i -X POST https://mcp.yourcompany.com/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+OAuth metadata endpoint returns JSON (used by Claude.ai to auto-register):
+
+```bash
+curl https://mcp.yourcompany.com/.well-known/oauth-authorization-server
+```
+
+---
+
 ## Configuration
 
 | Env Variable | Default | Description |
@@ -109,6 +206,14 @@ langfuse-mcp serve
 | `LANGFUSE_INTERNAL_DOMAINS` | `""` | Comma-separated internal domains to exclude from analytics (e.g., `mycompany.com,test.com`). Applies when using `group_by='domain'`. |
 | `LANGFUSE_MCP_READ_ONLY` | `false` | Disable write operations (`score_traces`, `create_dataset`, etc.) |
 | `LANGFUSE_PAGE_LIMIT` | `100` | Traces per API page |
+| `MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http`. HTTP mode listens on a port instead of stdin/stdout. See [Hosting](#hosting-as-a-remote-service). |
+| `MCP_HOST` | `0.0.0.0` | Bind address when `MCP_TRANSPORT=streamable-http`. |
+| `MCP_PORT` | `8000` | Port when `MCP_TRANSPORT=streamable-http`. |
+| `MCP_BASE_URL` | *(unset)* | Public base URL of the hosted server. Required for Google OAuth. |
+| `GOOGLE_CLIENT_ID` | *(unset)* | Google OAuth client ID. OAuth activates when all three Google vars are set. |
+| `GOOGLE_CLIENT_SECRET` | *(unset)* | Google OAuth client secret. |
+| `ALLOWED_EMAILS` | *(unset)* | Comma-separated emails allowed to call tools. Requires OAuth. |
+| `ALLOWED_EMAIL_DOMAINS` | *(unset)* | Comma-separated email domains allowed to call tools. Requires OAuth. |
 
 ---
 
@@ -169,6 +274,8 @@ Full Langfuse API coverage for querying and managing your observability data.
 | Tool | Description |
 |---|---|
 | `fetch_scores` | List scores/evaluations with filters — trace ID, score name, time range. |
+| `list_scores_v2` | v2 Scores API with richer filters (session ID, dataset run ID, queue ID, config ID, operator/value, etc.). |
+| `get_score_v2` | Get a single score by ID via the v2 Scores API. |
 
 #### Prompts
 
@@ -176,6 +283,7 @@ Full Langfuse API coverage for querying and managing your observability data.
 |---|---|
 | `list_prompts` | List all prompts in the project with optional name filter. |
 | `get_prompt` | Fetch a specific prompt by name, version, or label. |
+| `get_prompt_unresolved` | Fetch a prompt with placeholders/dependencies intact (debugging prompt composition). |
 | `create_text_prompt` | Create a new text prompt version with optional labels and model config. |
 | `create_chat_prompt` | Create a new chat prompt version with message array and optional config. |
 | `update_prompt_labels` | Update labels for a specific prompt version (e.g., promote to "production"). |
@@ -191,6 +299,21 @@ Full Langfuse API coverage for querying and managing your observability data.
 | `create_dataset` | Create a new dataset with optional description and metadata. |
 | `create_dataset_item` | Create or upsert a dataset item. Supports linking to source traces. |
 | `delete_dataset_item` | Delete a dataset item by ID. |
+
+#### Annotation Queues
+
+| Tool | Description |
+|---|---|
+| `list_annotation_queues` | List all annotation queues in the project. |
+| `create_annotation_queue` | Create a new annotation queue with attached score configs. |
+| `get_annotation_queue` | Get a queue by ID. |
+| `list_annotation_queue_items` | List items in a queue (optionally filtered by status). |
+| `get_annotation_queue_item` | Get a queue item by ID. |
+| `create_annotation_queue_item` | Add a trace or observation to a queue for review. |
+| `update_annotation_queue_item` | Change a queue item's status (PENDING / COMPLETED). |
+| `delete_annotation_queue_item` | Remove an item from a queue. |
+| `create_annotation_queue_assignment` | Assign a reviewer to a queue. |
+| `delete_annotation_queue_assignment` | Remove a reviewer from a queue. |
 
 #### Schema
 
@@ -322,10 +445,11 @@ Available groups:
 | `scores` | `fetch_scores` | 1 |
 | `prompts` | `list_prompts`, `get_prompt`, `create_text_prompt`, `create_chat_prompt`, `update_prompt_labels` | 5 |
 | `datasets` | `list_datasets`, `get_dataset`, `list_dataset_items`, `get_dataset_item`, `create_dataset`, `create_dataset_item`, `delete_dataset_item` | 7 |
+| `annotation_queues` | All 10 annotation queue tools | 10 |
 | `schema` | `get_data_schema` | 1 |
 | `analytics` | All 9 analytics tools | 9 |
 
-If `LANGFUSE_TOOLS` is not set, all 34 tools are loaded.
+If `LANGFUSE_TOOLS` is not set, all 47 tools are loaded.
 
 ---
 

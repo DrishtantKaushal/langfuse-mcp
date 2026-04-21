@@ -9,8 +9,8 @@ _GROUP_MAP = {
     "observations": ["fetch_observations", "fetch_observation"],
     "sessions": ["fetch_sessions", "get_session_details", "get_user_sessions"],
     "errors": ["find_exceptions", "get_exception_details", "get_error_count"],
-    "scores": ["fetch_scores"],
-    "prompts": ["list_prompts", "get_prompt", "create_text_prompt", "create_chat_prompt", "update_prompt_labels"],
+    "scores": ["fetch_scores", "list_scores_v2", "get_score_v2"],
+    "prompts": ["list_prompts", "get_prompt", "get_prompt_unresolved", "create_text_prompt", "create_chat_prompt", "update_prompt_labels"],
     "datasets": ["list_datasets", "get_dataset", "list_dataset_items", "get_dataset_item", "create_dataset", "create_dataset_item", "delete_dataset_item"],
     "schema": ["get_data_schema"],
 }
@@ -237,6 +237,75 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
                 params["toTimestamp"] = to_timestamp
             return await client.get_scores(**params)
 
+        @mcp.tool()
+        async def list_scores_v2(
+            limit: int = 50,
+            page: int = 1,
+            name: str | None = None,
+            user_id: str | None = None,
+            trace_id: str | None = None,
+            observation_id: str | None = None,
+            session_id: str | None = None,
+            dataset_run_id: str | None = None,
+            queue_id: str | None = None,
+            config_id: str | None = None,
+            source: str | None = None,
+            data_type: str | None = None,
+            environment: str | None = None,
+            operator: str | None = None,
+            value: float | None = None,
+            from_timestamp: str | None = None,
+            to_timestamp: str | None = None,
+            trace_tags: str | None = None,
+            score_ids: str | None = None,
+        ) -> dict:
+            """List scores using the v2 Scores API. Richer filters than fetch_scores.
+
+            trace_tags / score_ids: comma-separated values.
+            operator: comparator used with value (e.g. '>', '>=', '=', '<').
+            """
+            params: dict[str, Any] = {"limit": limit, "page": page}
+            if name:
+                params["name"] = name
+            if user_id:
+                params["userId"] = user_id
+            if trace_id:
+                params["traceId"] = trace_id
+            if observation_id:
+                params["observationId"] = observation_id
+            if session_id:
+                params["sessionId"] = session_id
+            if dataset_run_id:
+                params["datasetRunId"] = dataset_run_id
+            if queue_id:
+                params["queueId"] = queue_id
+            if config_id:
+                params["configId"] = config_id
+            if source:
+                params["source"] = source
+            if data_type:
+                params["dataType"] = data_type
+            if environment:
+                params["environment"] = environment
+            if operator:
+                params["operator"] = operator
+            if value is not None:
+                params["value"] = value
+            if from_timestamp:
+                params["fromTimestamp"] = from_timestamp
+            if to_timestamp:
+                params["toTimestamp"] = to_timestamp
+            if trace_tags:
+                params["traceTags"] = trace_tags
+            if score_ids:
+                params["scoreIds"] = score_ids
+            return await client.get_scores_v2(**params)
+
+        @mcp.tool()
+        async def get_score_v2(score_id: str) -> dict:
+            """Get a single score by ID via the v2 Scores API."""
+            return await client.get_score_v2(score_id)
+
     # -- Prompts --
 
     if _enabled("prompts"):
@@ -257,6 +326,25 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
             if label:
                 params["label"] = label
             return await client.get_prompt(name, **params)
+
+        @mcp.tool()
+        async def get_prompt_unresolved(
+            name: str,
+            version: int | None = None,
+            label: str | None = None,
+        ) -> dict:
+            """Fetch a prompt without resolving placeholders or linked dependencies.
+
+            Use this for debugging prompt composition (seeing the raw template with
+            `{{variable}}` placeholders intact). For production runtime fetches, use
+            get_prompt which resolves by default.
+            """
+            params: dict[str, Any] = {"resolve": "false"}
+            if version is not None:
+                params["version"] = version
+            if label:
+                params["label"] = label
+            return await client.get_prompt_v2(name, **params)
 
         @mcp.tool()
         async def create_text_prompt(

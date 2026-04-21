@@ -11,6 +11,7 @@ from .config import Config
 from .client import LangfuseClient
 from .tools.data_access import register_data_access_tools
 from .tools.analytics import register_analytics_tools
+from .tools.annotation_queues import register_annotation_queue_tools
 
 config = Config.from_env()
 client = LangfuseClient(config)
@@ -76,9 +77,11 @@ _enabled_groups = {g.strip().lower() for g in _enabled_tools.split(",") if g.str
 # If no filter specified, register everything
 if _enabled_groups is None:
     register_data_access_tools(mcp, client)
+    register_annotation_queue_tools(mcp, client)
     register_analytics_tools(mcp, client)
 else:
     register_data_access_tools(mcp, client, enabled_groups=_enabled_groups)
+    register_annotation_queue_tools(mcp, client, enabled_groups=_enabled_groups)
     if "analytics" in _enabled_groups:
         register_analytics_tools(mcp, client)
 
