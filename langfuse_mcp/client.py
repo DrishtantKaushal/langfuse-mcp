@@ -12,6 +12,35 @@ from cachetools import TTLCache
 from .config import Config
 
 
+class ClientRouter:
+    """Routes to the right LangfuseClient based on a project name.
+
+    Tool code calls `router.for_project(name).method(...)`; if name is None the
+    default project is used. Each LangfuseClient has its own cache, rate limiter,
+    and credentials.
+    """
+
+    def __init__(self, clients: dict[str, "LangfuseClient"], default_project: str):
+        self._clients = clients
+        self._default_project = default_project
+
+    def for_project(self, project: str | None = None) -> "LangfuseClient":
+        key = project or self._default_project
+        if key not in self._clients:
+            available = ", ".join(sorted(self._clients.keys()))
+            raise ValueError(
+                f"Unknown project '{key}'. Available: {available}"
+            )
+        return self._clients[key]
+
+    @property
+    def default_project(self) -> str:
+        return self._default_project
+
+    def project_names(self) -> list[str]:
+        return sorted(self._clients.keys())
+
+
 class RateLimiter:
     """Token bucket rate limiter. RPM=0 means unlimited."""
 

@@ -55,17 +55,18 @@ def _extract_input_text(trace: dict) -> str:
     return ""
 
 
-def _resolve_time_range(client, time_range):
-    """Resolve time_range: use config default if not explicitly set."""
-    return time_range if time_range else client.config.default_time_range
+def _resolve_time_range(lf, time_range):
+    """Resolve time_range: use config default if not explicitly set. lf: a LangfuseClient."""
+    return time_range if time_range else lf.config.default_time_range
 
 
-async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags, user_id,
+async def _fetch_traces_for_range(lf, time_range, start_date, end_date, tags, user_id,
                              max_pages=10, domain=None):
     """Fetch traces for a time range. Default 10 pages (1000 traces) for fast analytics.
-    If domain is set, post-filters traces to only include users from that domain."""
-    time_range = _resolve_time_range(client, time_range)
-    start, end = client.resolve_time_range(time_range, start_date, end_date)
+    If domain is set, post-filters traces to only include users from that domain.
+    lf: a LangfuseClient (resolved for the right project)."""
+    time_range = _resolve_time_range(lf, time_range)
+    start, end = lf.resolve_time_range(time_range, start_date, end_date)
     params = {
         "fromTimestamp": start.isoformat(),
         "toTimestamp": end.isoformat(),
@@ -75,18 +76,18 @@ async def _fetch_traces_for_range(client, time_range, start_date, end_date, tags
         params["tags"] = tags
     if user_id:
         params["userId"] = user_id
-    traces = await client.fetch_all_traces(**params)
+    traces = await lf.fetch_all_traces(**params)
     if domain:
         domain_lower = domain.lower()
-        traces = [t for t in traces if (client.extract_domain(t.get("userId")) or "").lower() == domain_lower]
+        traces = [t for t in traces if (lf.extract_domain(t.get("userId")) or "").lower() == domain_lower]
     return traces
 
 
-async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tags,
+async def _fetch_traces_and_scores(lf, time_range, start_date, end_date, tags,
                                     max_trace_pages=10, max_score_pages=10):
     """Fetch traces and scores in parallel. Returns (traces, score_map)."""
-    time_range = _resolve_time_range(client, time_range)
-    start, end = client.resolve_time_range(time_range, start_date, end_date)
+    time_range = _resolve_time_range(lf, time_range)
+    start, end = lf.resolve_time_range(time_range, start_date, end_date)
     ts_params = {
         "fromTimestamp": start.isoformat(),
         "toTimestamp": end.isoformat(),
@@ -94,8 +95,8 @@ async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tag
     if tags:
         ts_params["tags"] = tags
 
-    traces_coro = client.fetch_all_traces(max_pages=max_trace_pages, **ts_params)
-    scores_coro = client.fetch_all_scores(
+    traces_coro = lf.fetch_all_traces(max_pages=max_trace_pages, **ts_params)
+    scores_coro = lf.fetch_all_scores(
         fromTimestamp=ts_params["fromTimestamp"],
         toTimestamp=ts_params["toTimestamp"],
         max_pages=max_score_pages,
@@ -106,7 +107,12 @@ async def _fetch_traces_and_scores(client, time_range, start_date, end_date, tag
 
 
 def register_analytics_tools(mcp, client):
-    """Register all analytics tools on the FastMCP server."""
+    """Register all analytics tools on the FastMCP server.
+
+    `client` is a ClientRouter; every tool resolves per-call via
+    `client.for_project(project)`. Tools accept an optional `project` argument;
+    when omitted the router's default project is used.
+    """
 
     @mcp.tool()
     async def aggregate_by_group(
@@ -117,6 +123,7 @@ def register_analytics_tools(mcp, client):
         tags: str | None = None,
         exclude_internal: bool = False,
         top_n: int = 20,
+        project: str | None = None,
     ) -> dict:
         """Aggregate trace metrics by user group.
 
@@ -132,9 +139,9 @@ def register_analytics_tools(mcp, client):
         Set exclude_internal=true and LANGFUSE_INTERNAL_DOMAINS env var
         to filter out internal team users (only relevant with group_by='domain').
         """
-        # Fetch traces and scores in parallel
+        c = client.for_project(project)
         traces, trace_scores = await _fetch_traces_and_scores(
-            client, time_range, start_date, end_date, tags,
+            c, time_range, start_date, end_date, tags,
         )
 
         groups: dict[str, dict] = defaultdict(lambda: {
@@ -145,8 +152,8 @@ def register_analytics_tools(mcp, client):
 
         def _group_key(t):
             if group_by == "domain":
-                k = client.extract_domain(t.get("userId"))
-                if not k or (exclude_internal and client.is_internal(k)):
+                k = c.extract_domain(t.get("userId"))
+                if not k or (exclude_internal and c.is_internal(k)):
                     return None
                 return k
             elif group_by == "name":
@@ -175,7 +182,6 @@ def register_analytics_tools(mcp, client):
                 g["total_latency"] += float(latency)
                 g["latency_count"] += 1
 
-            # Apply score if available
             score = trace_scores.get(t.get("id", ""))
             if score is not None:
                 if score >= 0.5:
@@ -214,14 +220,16 @@ def register_analytics_tools(mcp, client):
         tags: str | None = None,
         bucket_by: str | None = None,
         score_name: str | None = None,
+        project: str | None = None,
     ) -> dict:
         """Compute accuracy from feedback scores. Accuracy = correct / (correct + incorrect).
 
         group_by: 'domain', 'name', 'userId'. bucket_by: 'week', 'day' for trends.
         score_name: filter to a specific score (default: all scores).
         """
+        c = client.for_project(project)
         traces, trace_scores = await _fetch_traces_and_scores(
-            client, time_range, start_date, end_date, tags,
+            c, time_range, start_date, end_date, tags,
         )
         trace_map = {t["id"]: t for t in traces}
 
@@ -232,7 +240,7 @@ def register_analytics_tools(mcp, client):
             if not trace:
                 continue
             if group_by == "domain":
-                key = client.extract_domain(trace.get("userId")) or "unknown"
+                key = c.extract_domain(trace.get("userId")) or "unknown"
             elif group_by:
                 key = str(trace.get(group_by, "unknown"))
             elif bucket_by == "week":
@@ -284,6 +292,7 @@ def register_analytics_tools(mcp, client):
         group_by: str | None = None,
         include_examples: bool = True,
         max_examples: int = 5,
+        project: str | None = None,
     ) -> dict:
         """Detect LLM output failures using pattern matching and feedback scores.
 
@@ -293,8 +302,9 @@ def register_analytics_tools(mcp, client):
         This catches LLM quality failures, NOT Python exceptions.
         Use find_exceptions for code errors.
         """
+        c = client.for_project(project)
         traces, trace_scores = await _fetch_traces_and_scores(
-            client, time_range, start_date, end_date, tags,
+            c, time_range, start_date, end_date, tags,
         )
         negative_traces = {tid for tid, val in trace_scores.items() if val < 0.5}
 
@@ -306,7 +316,7 @@ def register_analytics_tools(mcp, client):
         for t in traces:
             gkey = "overall"
             if group_by == "domain":
-                gkey = client.extract_domain(t.get("userId")) or "unknown"
+                gkey = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by:
                 gkey = str(t.get(group_by, "unknown"))
             group_totals[gkey] += 1
@@ -364,6 +374,7 @@ def register_analytics_tools(mcp, client):
         tags: str | None = None,
         group_by: str | None = None,
         percentiles: str = "50,90,95,99",
+        project: str | None = None,
     ) -> dict:
         """Compute token usage percentiles (TP50/TP90/TP95/TP99) across traces.
 
@@ -375,22 +386,22 @@ def register_analytics_tools(mcp, client):
         """
         import numpy as np
 
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None, max_pages=20)
+        c = client.for_project(project)
+        traces = await _fetch_traces_for_range(c, time_range, start_date, end_date, tags, None, max_pages=20)
         pcts = [int(p.strip()) for p in percentiles.split(",")]
 
         grouped: dict[str, list[dict]] = defaultdict(list)
         for t in traces:
             if group_by == "domain":
-                key = client.extract_domain(t.get("userId")) or "unknown"
+                key = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by:
                 key = str(t.get(group_by, "unknown"))
             else:
                 key = "all"
             grouped[key].append(t)
 
-        # Fetch observations: try batch first, fall back to concurrent per-trace
-        start, end = client.resolve_time_range(_resolve_time_range(client, time_range), start_date, end_date)
-        obs_by_trace = await client.fetch_observations_by_time_range(
+        start, end = c.resolve_time_range(_resolve_time_range(c, time_range), start_date, end_date)
+        obs_by_trace = await c.fetch_observations_by_time_range(
             from_timestamp=start.isoformat(),
             to_timestamp=end.isoformat(),
             obs_type="GENERATION",
@@ -402,10 +413,9 @@ def register_analytics_tools(mcp, client):
             input_tokens, output_tokens, total_tokens = [], [], []
             sample = group_traces[:200]
 
-            # If batch returned empty (volume too high), fetch per-trace concurrently
             if not obs_by_trace:
                 sample_ids = [t["id"] for t in sample]
-                obs_by_trace_local = await client.fetch_observations_for_traces(sample_ids, obs_type="GENERATION")
+                obs_by_trace_local = await c.fetch_observations_for_traces(sample_ids, obs_type="GENERATION")
             else:
                 obs_by_trace_local = obs_by_trace
 
@@ -450,6 +460,7 @@ def register_analytics_tools(mcp, client):
         tags: str | None = None,
         threshold: int = 256000,
         check_per_generation: bool = True,
+        project: str | None = None,
     ) -> dict:
         """Scan for traces where token usage exceeds a context window threshold.
 
@@ -457,20 +468,19 @@ def register_analytics_tools(mcp, client):
         SINGLE generation exceeds the limit (not just trace aggregate).
         Catches context window overflow causing degraded performance or truncation.
         """
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None, max_pages=20)
+        c = client.for_project(project)
+        traces = await _fetch_traces_for_range(c, time_range, start_date, end_date, tags, None, max_pages=20)
 
-        # Fetch observations: batch first, concurrent per-trace fallback
-        start, end = client.resolve_time_range(_resolve_time_range(client, time_range), start_date, end_date)
-        obs_by_trace = await client.fetch_observations_by_time_range(
+        start, end = c.resolve_time_range(_resolve_time_range(c, time_range), start_date, end_date)
+        obs_by_trace = await c.fetch_observations_by_time_range(
             from_timestamp=start.isoformat(),
             to_timestamp=end.isoformat(),
             obs_type="GENERATION",
             max_pages=30,
         )
-        # If batch empty (volume too high), fetch per-trace concurrently (sample 200)
         sample = traces[:200]
         if not obs_by_trace:
-            obs_by_trace = await client.fetch_observations_for_traces(
+            obs_by_trace = await c.fetch_observations_for_traces(
                 [t["id"] for t in sample], obs_type="GENERATION"
             )
 
@@ -534,6 +544,7 @@ def register_analytics_tools(mcp, client):
         end_date: str | None = None,
         tags: str | None = None,
         group_by: str | None = None,
+        project: str | None = None,
     ) -> dict:
         """Analyze multi-turn session behavior.
 
@@ -543,7 +554,8 @@ def register_analytics_tools(mcp, client):
         """
         import numpy as np
 
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
+        c = client.for_project(project)
+        traces = await _fetch_traces_for_range(c, time_range, start_date, end_date, tags, None)
         sessions: dict[str, list[dict]] = defaultdict(list)
         for t in traces:
             sid = t.get("sessionId")
@@ -564,7 +576,7 @@ def register_analytics_tools(mcp, client):
 
             gkey = "all"
             if group_by == "domain":
-                gkey = client.extract_domain(session_traces[0].get("userId")) or "unknown"
+                gkey = c.extract_domain(session_traces[0].get("userId")) or "unknown"
             elif group_by:
                 gkey = str(session_traces[0].get(group_by, "unknown"))
 
@@ -613,13 +625,15 @@ def register_analytics_tools(mcp, client):
         tags: str | None = None,
         group_by: str | None = None,
         bucket_by: str | None = None,
+        project: str | None = None,
     ) -> dict:
         """Compute cost breakdown from Langfuse totalCost field.
 
         Groups by 'domain', 'name', 'userId', or time buckets ('day', 'week').
         Returns: total cost, average per trace, per group breakdown.
         """
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
+        c = client.for_project(project)
+        traces = await _fetch_traces_for_range(c, time_range, start_date, end_date, tags, None)
         buckets: dict[str, dict] = defaultdict(lambda: {"cost": 0.0, "traces": 0, "latency_sum": 0.0})
 
         for t in traces:
@@ -627,7 +641,7 @@ def register_analytics_tools(mcp, client):
             latency = float(t.get("latency") or 0)
 
             if group_by == "domain":
-                key = client.extract_domain(t.get("userId")) or "unknown"
+                key = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by:
                 key = str(t.get(group_by, "unknown"))
             elif bucket_by == "week":
@@ -676,6 +690,7 @@ def register_analytics_tools(mcp, client):
         group_by: str | None = None,
         percentiles: str = "50,90,95,99",
         include_per_generation: bool = False,
+        project: str | None = None,
     ) -> dict:
         """Analyze latency distribution across traces and optionally per generation.
 
@@ -686,7 +701,8 @@ def register_analytics_tools(mcp, client):
         """
         import numpy as np
 
-        traces = await _fetch_traces_for_range(client, time_range, start_date, end_date, tags, None)
+        c = client.for_project(project)
+        traces = await _fetch_traces_for_range(c, time_range, start_date, end_date, tags, None)
         pcts = [int(p.strip()) for p in percentiles.split(",")]
 
         grouped: dict[str, list[float]] = defaultdict(list)
@@ -695,7 +711,7 @@ def register_analytics_tools(mcp, client):
             if latency is None:
                 continue
             if group_by == "domain":
-                key = client.extract_domain(t.get("userId")) or "unknown"
+                key = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by:
                 key = str(t.get(group_by, "unknown"))
             else:
@@ -718,10 +734,9 @@ def register_analytics_tools(mcp, client):
 
         gen_results = None
         if include_per_generation:
-            # Fetch observations for sampled traces concurrently
             sample_traces = traces[:100]
             sample_ids = [t["id"] for t in sample_traces]
-            obs_by_trace = await client.fetch_observations_for_traces(sample_ids, obs_type="GENERATION")
+            obs_by_trace = await c.fetch_observations_for_traces(sample_ids, obs_type="GENERATION")
 
             gen_latency: dict[str, list[float]] = defaultdict(list)
             for t in sample_traces:
@@ -778,6 +793,7 @@ def register_analytics_tools(mcp, client):
         group_by: str | None = None,
         exclude_internal: bool = False,
         limit: int = 100,
+        project: str | None = None,
     ) -> dict:
         """List user queries extracted from trace inputs.
 
@@ -790,11 +806,11 @@ def register_analytics_tools(mcp, client):
         group_by: 'name' (agent), 'userId', 'domain'. Set exclude_internal=true to
         filter internal team users.
         """
+        c = client.for_project(project)
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, user_id, domain=domain,
+            c, time_range, start_date, end_date, tags, user_id, domain=domain,
         )
 
-        # Apply name filter if provided
         if name:
             traces = [t for t in traces if t.get("name") == name]
 
@@ -803,8 +819,8 @@ def register_analytics_tools(mcp, client):
 
         for t in traces:
             if exclude_internal:
-                user_domain = client.extract_domain(t.get("userId"))
-                if client.is_internal(user_domain):
+                user_domain = c.extract_domain(t.get("userId"))
+                if c.is_internal(user_domain):
                     continue
 
             query_text = _extract_input_text(t)
@@ -813,7 +829,7 @@ def register_analytics_tools(mcp, client):
 
             gkey = None
             if group_by == "domain":
-                gkey = client.extract_domain(t.get("userId")) or "unknown"
+                gkey = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by == "name":
                 gkey = t.get("name") or "unknown"
             elif group_by == "userId":
@@ -853,6 +869,7 @@ def register_analytics_tools(mcp, client):
         threshold_seconds: float | None = None,
         top_n: int = 20,
         group_by: str | None = None,
+        project: str | None = None,
     ) -> dict:
         """Find the slowest traces. Returns actual trace IDs and metadata.
 
@@ -864,8 +881,9 @@ def register_analytics_tools(mcp, client):
         Otherwise returns the top_n slowest traces.
         group_by: 'name' (agent), 'userId', 'domain'.
         """
+        c = client.for_project(project)
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, None, domain=domain,
+            c, time_range, start_date, end_date, tags, None, domain=domain,
         )
 
         with_latency = []
@@ -898,7 +916,7 @@ def register_analytics_tools(mcp, client):
 
             gkey = None
             if group_by == "domain":
-                gkey = client.extract_domain(t.get("userId")) or "unknown"
+                gkey = c.extract_domain(t.get("userId")) or "unknown"
             elif group_by == "name":
                 gkey = t.get("name") or "unknown"
             elif group_by == "userId":
@@ -933,6 +951,7 @@ def register_analytics_tools(mcp, client):
         domain: str | None = None,
         search_in: str = "both",
         limit: int = 50,
+        project: str | None = None,
     ) -> dict:
         """Search trace inputs and outputs for keywords.
 
@@ -943,8 +962,9 @@ def register_analytics_tools(mcp, client):
         search_in: 'input', 'output', or 'both' (default).
         query: keyword or phrase to search for (case-insensitive).
         """
+        c = client.for_project(project)
         traces = await _fetch_traces_for_range(
-            client, time_range, start_date, end_date, tags, None, domain=domain,
+            c, time_range, start_date, end_date, tags, None, domain=domain,
         )
 
         pattern = re.compile(re.escape(query), re.IGNORECASE)
@@ -986,19 +1006,21 @@ def register_analytics_tools(mcp, client):
         score_name: str,
         score_value: float,
         comment: str | None = None,
+        project: str | None = None,
     ) -> dict:
         """Write scores back to Langfuse traces. trace_ids: comma-separated.
 
         Use this after analysis to annotate traces with findings.
         Example: score failing traces with 'needs-review'.
         """
+        c = client.for_project(project)
         ids = [tid.strip() for tid in trace_ids.split(",")]
         tasks = []
         for tid in ids:
             data: dict = {"traceId": tid, "name": score_name, "value": score_value}
             if comment:
                 data["comment"] = comment
-            tasks.append(client.create_score(data))
+            tasks.append(c.create_score(data))
         results = await asyncio.gather(*tasks)
 
         return {"scored": len(ids), "score_name": score_name, "score_value": score_value, "results": [{"trace_id": tid, "result": r} for tid, r in zip(ids, results)]}

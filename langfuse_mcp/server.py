@@ -7,14 +7,17 @@ load_dotenv()
 
 from fastmcp import FastMCP
 
-from .config import Config
-from .client import LangfuseClient
+from .config import MultiProjectConfig
+from .client import LangfuseClient, ClientRouter
 from .tools.data_access import register_data_access_tools
 from .tools.analytics import register_analytics_tools
 from .tools.annotation_queues import register_annotation_queue_tools
 
-config = Config.from_env()
-client = LangfuseClient(config)
+multi_config = MultiProjectConfig.from_env()
+_project_clients = {
+    name: LangfuseClient(cfg) for name, cfg in multi_config.projects.items()
+}
+client = ClientRouter(_project_clients, multi_config.default_project)
 
 _google_client_id = os.getenv("GOOGLE_CLIENT_ID")
 _google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")

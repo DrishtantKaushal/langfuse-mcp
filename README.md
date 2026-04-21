@@ -9,7 +9,7 @@
 
 [Model Context Protocol](https://modelcontextprotocol.io) server for [Langfuse](https://langfuse.com) observability. Query traces, analyze accuracy, detect failures, track costs, debug latency, manage prompts and datasets.
 
-**47 tools** across data access and analytics. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
+**50 tools** across data access and analytics. Multi-project support so one instance can serve several Langfuse projects. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
 
 ## Why this MCP server?
 
@@ -22,7 +22,10 @@ Comparison with [official Langfuse MCP](https://langfuse.com/docs/api-and-data-p
 | Exception Tracking | Yes | No |
 | Prompt Management | Yes | Yes |
 | Dataset Management | Yes | No |
+| Annotation Queues | Yes | No |
+| Scores v2 API | Yes | No |
 | Score Write-back | Yes | No |
+| **Multi-project support** | Yes | No |
 | **Accuracy Metrics** | Yes | No |
 | **Failure Detection** | Yes | No |
 | **Token Percentiles** | Yes | No |
@@ -32,7 +35,7 @@ Comparison with [official Langfuse MCP](https://langfuse.com/docs/api-and-data-p
 | **Context Breach Scanning** | Yes | No |
 | **User Group Aggregation** | Yes | No |
 
-The official MCP focuses on prompt management. This server provides a **full observability and analytics toolkit** — traces, observations, sessions, scores, exceptions, prompts, datasets, plus 9 built-in analytics tools that compute insights server-side and return LLM-sized summaries.
+The official MCP focuses on prompt management. This server provides a **full observability and analytics toolkit** — traces, observations, sessions, scores, exceptions, prompts, datasets, annotation queues, plus 9 built-in analytics tools that compute insights server-side and return LLM-sized summaries. Multi-project routing lets a single instance serve several Langfuse projects behind one connector URL.
 
 ---
 
@@ -196,6 +199,46 @@ curl https://mcp.yourcompany.com/.well-known/oauth-authorization-server
 
 ---
 
+## Multi-project support
+
+A single server instance can route to multiple Langfuse projects. Every tool accepts an optional `project` argument; when omitted, the server-configured default is used. Call `list_projects` to discover what's available.
+
+### Configuring projects
+
+Declare each project via indexed env vars. Project names are data, not part of variable names — use whatever scheme you like.
+
+```bash
+LANGFUSE_PROJECT_1_NAME=production
+LANGFUSE_PROJECT_1_PUBLIC_KEY=pk-lf-...
+LANGFUSE_PROJECT_1_SECRET_KEY=sk-lf-...
+LANGFUSE_PROJECT_1_HOST=https://cloud.langfuse.com
+
+LANGFUSE_PROJECT_2_NAME=staging
+LANGFUSE_PROJECT_2_PUBLIC_KEY=pk-lf-...
+LANGFUSE_PROJECT_2_SECRET_KEY=sk-lf-...
+LANGFUSE_PROJECT_2_HOST=https://cloud.langfuse.com
+
+LANGFUSE_DEFAULT_PROJECT=production
+```
+
+### Usage from the client
+
+```
+Claude: "Show me failing traces in production today."
+→ fetch_traces(project="production", ...) routed to project 1's credentials.
+
+Claude: "Compare that with staging."
+→ fetch_traces(project="staging", ...) routed to project 2's credentials.
+```
+
+Each project has its own cache, rate limiter, and connection pool. Claude.ai sees one connector; users authenticate once via OAuth and can query any configured project within the session.
+
+### Single-project (legacy) mode
+
+If `LANGFUSE_PROJECT_1_NAME` is not set, the server falls back to the legacy `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` vars and registers them as a project called `default`. Existing deployments keep working without changes.
+
+---
+
 ## Configuration
 
 | Env Variable | Default | Description |
@@ -206,6 +249,11 @@ curl https://mcp.yourcompany.com/.well-known/oauth-authorization-server
 | `LANGFUSE_INTERNAL_DOMAINS` | `""` | Comma-separated internal domains to exclude from analytics (e.g., `mycompany.com,test.com`). Applies when using `group_by='domain'`. |
 | `LANGFUSE_MCP_READ_ONLY` | `false` | Disable write operations (`score_traces`, `create_dataset`, etc.) |
 | `LANGFUSE_PAGE_LIMIT` | `100` | Traces per API page |
+| `LANGFUSE_PROJECT_{N}_NAME` | *(unset)* | Multi-project: name for project N (e.g. `production`). See [Multi-project](#multi-project-support). |
+| `LANGFUSE_PROJECT_{N}_PUBLIC_KEY` | *(unset)* | Public key for project N. |
+| `LANGFUSE_PROJECT_{N}_SECRET_KEY` | *(unset)* | Secret key for project N. |
+| `LANGFUSE_PROJECT_{N}_HOST` | `https://cloud.langfuse.com` | Host URL for project N. |
+| `LANGFUSE_DEFAULT_PROJECT` | first configured | Default project name used when a tool call omits `project`. |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http`. HTTP mode listens on a port instead of stdin/stdout. See [Hosting](#hosting-as-a-remote-service). |
 | `MCP_HOST` | `0.0.0.0` | Bind address when `MCP_TRANSPORT=streamable-http`. |
 | `MCP_PORT` | `8000` | Port when `MCP_TRANSPORT=streamable-http`. |
@@ -245,6 +293,7 @@ Full Langfuse API coverage for querying and managing your observability data.
 |---|---|
 | `fetch_traces` | List traces with filters — user ID, name, tags, time range, ordering. Returns paginated results. |
 | `fetch_trace` | Get a single trace by ID with full details including all observations (spans, generations, events). |
+| `diff_traces` | Compare two traces side-by-side (name, user, latency, cost, tags, release, version). |
 
 #### Observations
 
@@ -314,6 +363,18 @@ Full Langfuse API coverage for querying and managing your observability data.
 | `delete_annotation_queue_item` | Remove an item from a queue. |
 | `create_annotation_queue_assignment` | Assign a reviewer to a queue. |
 | `delete_annotation_queue_assignment` | Remove a reviewer from a queue. |
+
+#### Metrics
+
+| Tool | Description |
+|---|---|
+| `get_daily_metrics` | Langfuse's pre-aggregated daily rollup (trace count, cost, tokens per day). Faster than per-trace aggregation for long windows. |
+
+#### Projects
+
+| Tool | Description |
+|---|---|
+| `list_projects` | Discovery: returns the list of configured Langfuse projects and the default project. |
 
 #### Schema
 
@@ -446,10 +507,12 @@ Available groups:
 | `prompts` | `list_prompts`, `get_prompt`, `create_text_prompt`, `create_chat_prompt`, `update_prompt_labels` | 5 |
 | `datasets` | `list_datasets`, `get_dataset`, `list_dataset_items`, `get_dataset_item`, `create_dataset`, `create_dataset_item`, `delete_dataset_item` | 7 |
 | `annotation_queues` | All 10 annotation queue tools | 10 |
+| `metrics` | `get_daily_metrics` | 1 |
+| `projects` | `list_projects` | 1 |
 | `schema` | `get_data_schema` | 1 |
 | `analytics` | All 9 analytics tools | 9 |
 
-If `LANGFUSE_TOOLS` is not set, all 47 tools are loaded.
+If `LANGFUSE_TOOLS` is not set, all 50 tools are loaded.
 
 ---
 
@@ -494,7 +557,9 @@ The official Langfuse MCP (5 tools) focuses on prompt management. This server pr
 | Data access (traces, observations, sessions) | Yes | Yes |
 | Prompt & dataset management | Yes | Yes |
 | Exception tracking | Yes | Yes |
+| Annotation queues | Yes | Partial |
 | Selective tool loading | Yes | Yes |
+| **Multi-project support** | **Yes** | No |
 | **Accuracy metrics** | **Yes** | No |
 | **LLM failure detection** | **Yes** | No |
 | **Token percentiles (TP50/P90/P95/P99)** | **Yes** | No |
