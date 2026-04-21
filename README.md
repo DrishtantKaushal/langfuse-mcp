@@ -9,7 +9,7 @@
 
 [Model Context Protocol](https://modelcontextprotocol.io) server for [Langfuse](https://langfuse.com) observability. Query traces, analyze accuracy, detect failures, track costs, debug latency, manage prompts and datasets.
 
-**50 tools** across data access and analytics. Multi-project support so one instance can serve several Langfuse projects. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
+**56 tools** across data access and analytics. Multi-project support so one instance can serve several Langfuse projects. Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.com), and any MCP-compatible client.
 
 ## Why this MCP server?
 
@@ -370,6 +370,27 @@ Full Langfuse API coverage for querying and managing your observability data.
 |---|---|
 | `get_daily_metrics` | Langfuse's pre-aggregated daily rollup (trace count, cost, tokens per day). Faster than per-trace aggregation for long windows. |
 
+#### Users
+
+| Tool | Description |
+|---|---|
+| `list_users` | Top users by trace count over a time window (defaults to last 30 days). Wraps the Langfuse `/metrics` query API. |
+
+#### Comments
+
+| Tool | Description |
+|---|---|
+| `list_comments` | List comments attached to traces/observations/sessions/prompts, with filters. |
+| `get_comment` | Get a single comment by ID. |
+| `create_comment` | Create a markdown comment on a trace/observation/session/prompt. |
+
+#### Models
+
+| Tool | Description |
+|---|---|
+| `list_models` | List model definitions in Langfuse's models registry (pricing + tokenizer config). |
+| `get_model` | Get a single model definition by ID. |
+
 #### Projects
 
 | Tool | Description |
@@ -508,11 +529,14 @@ Available groups:
 | `datasets` | `list_datasets`, `get_dataset`, `list_dataset_items`, `get_dataset_item`, `create_dataset`, `create_dataset_item`, `delete_dataset_item` | 7 |
 | `annotation_queues` | All 10 annotation queue tools | 10 |
 | `metrics` | `get_daily_metrics` | 1 |
+| `users` | `list_users` | 1 |
+| `comments` | `list_comments`, `get_comment`, `create_comment` | 3 |
+| `models` | `list_models`, `get_model` | 2 |
 | `projects` | `list_projects` | 1 |
 | `schema` | `get_data_schema` | 1 |
 | `analytics` | All 9 analytics tools | 9 |
 
-If `LANGFUSE_TOOLS` is not set, all 50 tools are loaded.
+If `LANGFUSE_TOOLS` is not set, all 56 tools are loaded.
 
 ---
 

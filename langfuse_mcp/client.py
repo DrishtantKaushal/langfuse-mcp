@@ -422,6 +422,29 @@ class LangfuseClient:
     async def get_daily_metrics(self, **kwargs) -> dict:
         return await self._get_cached("metrics/daily", kwargs)
 
+    async def query_metrics(self, query: dict) -> dict:
+        """Run a Langfuse /metrics query. `query` is the JSON-shape query object
+        with view, dimensions, metrics, filters, etc."""
+        import json as _json
+        return await self._get_cached("metrics", {"query": _json.dumps(query)})
+
+    # --- Comments ---
+    async def get_comments(self, **kwargs) -> dict:
+        return await self._get_cached("comments", kwargs)
+
+    async def get_comment(self, comment_id: str) -> dict:
+        return await self._get_cached(f"comments/{comment_id}", {})
+
+    async def create_comment(self, data: dict) -> dict:
+        return await self._post("comments", data)
+
+    # --- Models ---
+    async def get_models(self, **kwargs) -> dict:
+        return await self._get_cached("models", kwargs)
+
+    async def get_model(self, model_id: str) -> dict:
+        return await self._get_cached(f"models/{model_id}", {})
+
     # --- Utility (sync — no I/O) ---
     def resolve_time_range(self, time_range: str,
                            start_date: str | None = None,

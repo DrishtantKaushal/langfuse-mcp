@@ -15,6 +15,9 @@ _GROUP_MAP = {
     "schema": ["get_data_schema"],
     "projects": ["list_projects"],
     "metrics": ["get_daily_metrics"],
+    "users": ["list_users"],
+    "comments": ["list_comments", "get_comment", "create_comment"],
+    "models": ["list_models", "get_model"],
 }
 
 _PROJECT_DOC = "project: Langfuse project to query; uses the default if omitted. Call list_projects to see available names."
@@ -569,6 +572,122 @@ def register_data_access_tools(mcp, client, enabled_groups: set[str] | None = No
             if tags:
                 params["tags"] = tags
             return await c.get_daily_metrics(**params)
+
+    # -- Users --
+
+    if _enabled("users"):
+        @mcp.tool()
+        async def list_users(
+            from_timestamp: str | None = None,
+            to_timestamp: str | None = None,
+            top_n: int = 20,
+            project: str | None = None,
+        ) -> dict:
+            """List users in the project with per-user trace counts.
+
+            Langfuse does not expose a dedicated /users endpoint — this queries the
+            metrics API (grouping traces by userId) and returns the top users by
+            trace count. Use fetch_traces(user_id=...) for a specific user's traces.
+
+            If timestamps are omitted, defaults to the last 30 days.
+            """
+            from datetime import datetime, timedelta, timezone as _tz
+            c = client.for_project(project)
+            now = datetime.now(_tz.utc)
+            query: dict[str, Any] = {
+                "view": "traces",
+                "dimensions": [{"field": "userId"}],
+                "metrics": [{"measure": "count", "aggregation": "count"}],
+                "filters": [],
+                "fromTimestamp": from_timestamp or (now - timedelta(days=30)).isoformat(),
+                "toTimestamp": to_timestamp or now.isoformat(),
+            }
+            result = await c.query_metrics(query)
+            rows = result.get("data", []) if isinstance(result, dict) else []
+            rows = [r for r in rows if r.get("userId")]
+            rows.sort(key=lambda r: r.get("count_count", r.get("count", 0)) or 0, reverse=True)
+            return {
+                "total_users": len(rows),
+                "users": rows[:top_n],
+            }
+
+    # -- Comments --
+
+    if _enabled("comments"):
+        @mcp.tool()
+        async def list_comments(
+            object_type: str | None = None,
+            object_id: str | None = None,
+            author_user_id: str | None = None,
+            page: int = 1,
+            limit: int = 50,
+            project: str | None = None,
+        ) -> dict:
+            """List comments attached to traces, observations, sessions, or prompts.
+
+            object_type: 'trace' | 'observation' | 'session' | 'prompt'.
+            object_id requires object_type to also be set.
+            """
+            c = client.for_project(project)
+            params: dict[str, Any] = {"page": page, "limit": limit}
+            if object_type:
+                params["objectType"] = object_type
+            if object_id:
+                params["objectId"] = object_id
+            if author_user_id:
+                params["authorUserId"] = author_user_id
+            return await c.get_comments(**params)
+
+        @mcp.tool()
+        async def get_comment(comment_id: str, project: str | None = None) -> dict:
+            """Get a single comment by ID."""
+            return await client.for_project(project).get_comment(comment_id)
+
+        @mcp.tool()
+        async def create_comment(
+            project_id: str,
+            object_type: str,
+            object_id: str,
+            content: str,
+            author_user_id: str | None = None,
+            project: str | None = None,
+        ) -> dict:
+            """Create a comment on a trace, observation, session, or prompt.
+
+            project_id: the Langfuse project ID (different from the MCP `project`
+              argument — find it in your Langfuse dashboard URL).
+            object_type: 'trace' | 'observation' | 'session' | 'prompt'.
+            content: markdown body, up to 5000 characters.
+            """
+            c = client.for_project(project)
+            data: dict[str, Any] = {
+                "projectId": project_id,
+                "objectType": object_type,
+                "objectId": object_id,
+                "content": content,
+            }
+            if author_user_id:
+                data["authorUserId"] = author_user_id
+            return await c.create_comment(data)
+
+    # -- Models --
+
+    if _enabled("models"):
+        @mcp.tool()
+        async def list_models(
+            page: int = 1, limit: int = 50, project: str | None = None,
+        ) -> dict:
+            """List model definitions in the Langfuse models registry.
+
+            Returns both Langfuse-managed models and any custom pricing/tokenizer
+            configs the project has added.
+            """
+            return await client.for_project(project).get_models(page=page, limit=limit)
+
+        @mcp.tool()
+        async def get_model(model_id: str, project: str | None = None) -> dict:
+            """Get a single model definition by ID, including pricing and tokenizer config."""
+            return await client.for_project(project).get_model(model_id)
 
     # -- Schema --
 
